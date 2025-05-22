@@ -18,6 +18,7 @@ exclude = [".gitignore"]
 
 [dependencies]
 # todo: Allow different features for other MCUs.
+defmt = "1.0.1"
 hal = { package = "stm32-hal2", version = "1.9.3", features = ["g431"]}
 heapless = "0.8.0"
 crc-any = {version = "2.5.0", default-features = false}

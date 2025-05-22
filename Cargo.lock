@@ -141,6 +141,7 @@ name = "esp-hosted"
 version = "0.1.0"
 dependencies = [
  "crc-any",
+ "defmt",
  "heapless",
  "num_enum",
  "stm32-hal2",
