@@ -1,0 +1,24 @@
+[package]
+name = "esp-hosted"
+version = "0.1.0"
+edition = "2024"
+authors = ["David O'Connor <the_alchemist@fastmail.com>"]
+description = "Support for the ESP-Hosted firmware, with an STM32 host."
+keywords = ["esp", "stm32", "esp-hosted", "wifi", "ble"]
+categories = [
+    "embedded",
+    "hardware-support",
+    "no-std",
+]
+repository = "https://github.com/David-OConnor/esp-hosted"
+documentation = "https://docs.rs/esp_hosted"
+readme = "README.md"
+license = "MIT"
+exclude = [".gitignore"]
+
+[dependencies]
+# todo: Allow different features for other MCUs.
+hal = { package = "stm32-hal2", version = "1.9.3", features = ["g431"]}
+heapless = "0.8.0"
+crc-any = {version = "2.5.0", default-features = false}
+num_enum = { version = "0.7.3", default-features = false }
