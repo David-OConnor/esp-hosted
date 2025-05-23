@@ -2,7 +2,7 @@
 
 use heapless::{String, Vec};
 
-use crate::{CRC_LEN, Command, EspError, Module, RPC_HEADER_SIZE, Uart, build_frame, calc_crc};
+use crate::{CRC_LEN, Command, EspError, Module, RPC_HEADER_SIZE, Uart, build_frame, crc_frame};
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -29,8 +29,8 @@ pub fn get_aps(
 
     // 1 → start scan
     let mut tx = [0u8; RPC_HEADER_SIZE + CRC_LEN];
-    let frame = build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
-    uart.write(frame)?;
+    build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
+    uart.write(&tx)?;
 
     // 2 → collect results
     loop {
@@ -65,7 +65,7 @@ pub fn get_aps(
         full[RPC_HEADER_SIZE..RPC_HEADER_SIZE + len + CRC_LEN]
             .copy_from_slice(&buf[..len + CRC_LEN]);
         let rx_crc = u16::from_le_bytes(buf[len..len + 2].try_into().unwrap());
-        if calc_crc(&full[..RPC_HEADER_SIZE + len]) != rx_crc {
+        if crc_frame(&full[..RPC_HEADER_SIZE + len]) != rx_crc {
             return Err(EspError::CrcMismatch);
         }
 
