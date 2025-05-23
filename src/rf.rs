@@ -2,7 +2,9 @@
 
 use heapless::{String, Vec};
 
-use crate::{CRC_LEN, Command, EspError, Module, RPC_HEADER_SIZE, Uart, build_frame, crc_frame};
+use crate::{
+    CRC_LEN, Command, EspError, Module, RPC_HEADER_SIZE, Uart, build_frame, protocol::calc_crc,
+};
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -65,7 +67,7 @@ pub fn get_aps(
         full[RPC_HEADER_SIZE..RPC_HEADER_SIZE + len + CRC_LEN]
             .copy_from_slice(&buf[..len + CRC_LEN]);
         let rx_crc = u16::from_le_bytes(buf[len..len + 2].try_into().unwrap());
-        if crc_frame(&full[..RPC_HEADER_SIZE + len]) != rx_crc {
+        if calc_crc(&full[..RPC_HEADER_SIZE + len]) != rx_crc {
             return Err(EspError::CrcMismatch);
         }
 
