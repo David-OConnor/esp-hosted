@@ -11,6 +11,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crc_any::{CRCu8, CRCu16};
 use defmt::println;
+
+#[cfg(feature = "hal")]
 use hal::{
     pac::{SPI2, USART1, USART2},
     spi::{Spi, SpiError},
@@ -19,11 +21,22 @@ use hal::{
 use heapless::{String, Vec};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+#[macro_export]
+macro_rules! parse_le {
+    ($bytes:expr, $t:ty, $range:expr) => {{ <$t>::from_le_bytes($bytes[$range].try_into().unwrap()) }};
+}
+
+#[macro_export]
+macro_rules! copy_le {
+    ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
+}
+
 use crate::protocol::{
-    CRC_LEN, Command, MAGIC, Module, PL_HEADER_SIZE, RPC_HEADER_SIZE, VERSION, build_frame,
+    CRC_LEN, Command, MAGIC, Module, PL_HEADER_SIZE, TLV_HEADER_SIZE, VERSION, build_frame,
     calc_crc, slip_encode,
 };
 
+#[cfg(feature = "hal")]
 // todo: Allow any uart.
 type Uart = Usart<USART2>;
 // type Uart = Usart<USART1>;
@@ -40,6 +53,7 @@ const MORE_FRAGMENT: u8 = 1 << 0; // todo type and if we use it.
 /// A simple error enum for our host-side protocol
 #[derive(Debug)]
 pub enum EspError {
+    #[cfg(feature = "hal")]
     Uart(UartError),
     UnexpectedResponse(u8),
     CrcMismatch,
@@ -47,32 +61,34 @@ pub enum EspError {
     // todo: etc. as needed
 }
 
+#[cfg(feature = "hal")]
 impl From<UartError> for EspError {
     fn from(e: UartError) -> Self {
         EspError::Uart(e)
     }
 }
 
+#[cfg(feature = "hal")]
 /// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
 pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
-    const MAX_FRAME: usize = PL_HEADER_SIZE + 2 + RPC_HEADER_SIZE + CRC_LEN;
+    const PING_FRAME_LEN: usize = PL_HEADER_SIZE + TLV_HEADER_SIZE + CRC_LEN;
 
-    let mut frame_buf = [0u8; MAX_FRAME];
+    let mut frame_buf = [0u8; PING_FRAME_LEN];
     build_frame(&mut frame_buf, Module::Ctrl, Command::PingReq, &[]);
 
-    let frame_len = PL_HEADER_SIZE + RPC_HEADER_SIZE + 0 + CRC_LEN;
+    let frame_len = PL_HEADER_SIZE + TLV_HEADER_SIZE + 0 + CRC_LEN;
 
-    // uart.write(frame_buf)?;
+    uart.write(&frame_buf)?;
 
     // todo: Experimenting with slip_buf. wrap this in a helper if required.
-    let mut slip_buf = [0u8; 2 * MAX_FRAME + 2]; // worst-case expansion
-    let slip_len = slip_encode(&frame_buf[..frame_len], &mut slip_buf);
-    uart.write(&slip_buf[..slip_len])?;
+    // let mut slip_buf = [0u8; 2 * PING_FRAME_LEN + 2]; // worst-case expansion
+    // let slip_len = slip_encode(&frame_buf[..frame_len], &mut slip_buf);
+    // uart.write(&slip_buf[..slip_len])?;
 
     println!("Writing status check frame: {:?}", &frame_buf);
 
     // --------- receive header ---------
-    let mut hdr = [0; RPC_HEADER_SIZE];
+    let mut hdr = [0; TLV_HEADER_SIZE];
 
     // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
     uart.read(&mut hdr)?;
@@ -91,12 +107,12 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     uart.read(&mut rest[..len + CRC_LEN])?;
 
     // validate CRC
-    let mut full = [0u8; RPC_HEADER_SIZE + 1_026];
-    full[..RPC_HEADER_SIZE].copy_from_slice(&hdr);
-    full[RPC_HEADER_SIZE..RPC_HEADER_SIZE + len].copy_from_slice(&rest[..len]);
+    let mut full = [0u8; TLV_HEADER_SIZE + 1_026];
+    full[..TLV_HEADER_SIZE].copy_from_slice(&hdr);
+    full[TLV_HEADER_SIZE..TLV_HEADER_SIZE + len].copy_from_slice(&rest[..len]);
 
     let rx_crc = u16::from_le_bytes(rest[len..len + CRC_LEN].try_into().unwrap());
-    if calc_crc(&full[..RPC_HEADER_SIZE + len]) != rx_crc {
+    if calc_crc(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
         println!("ESP CRC mismatch"); // todo temp
         return Err(EspError::CrcMismatch);
     }

@@ -295,9 +295,9 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "stm32-hal2"
-version = "1.9.3"
+version = "1.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d66b84069c6f0f035914bbb50f7d13c5a8dc3152da212417b776f7b693b7f2"
+checksum = "08e5e5cc2e234b681271db71d8f4775605b336447ff9121a8d7f431617de6198"
 dependencies = [
  "cfg-if",
  "chrono",

@@ -1,11 +1,11 @@
 //! This module contains the basic protocol used by all messages.
 
-use hal::{copy_le, parse_le};
 use num_enum::TryFromPrimitive;
+use crate::{copy_le, parse_le};
 
 pub(crate) const MAGIC: u8 = 0xEC;
 pub(crate) const VERSION: u8 = 1;
-pub(crate) const RPC_HEADER_SIZE: usize = 6;
+pub(crate) const TLV_HEADER_SIZE: usize = 6;
 pub(crate) const PL_HEADER_SIZE: usize = 12;
 pub(crate) const CRC_LEN: usize = 2;
 
@@ -20,7 +20,7 @@ pub(crate) const CRC_LEN: usize = 2;
 /// (i.e. it skips the constant magic byte 0xEC) and continues up to the last byte of the
 /// payload.
 pub(crate) fn calc_crc(buf: &[u8]) -> u16 {
-    buf.iter().fold(0u16, |acc, &b| acc.wrapping_add(b as u16))
+    buf.iter().fold(0u16, |acc, &b| acc.wrapping_add(b as _))
 }
 
 // /// The CRC at the end of the frame.
@@ -57,20 +57,46 @@ pub(crate) enum Command {
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
+pub(crate) enum PacketTypeHci{
+    A = 0,
+    B = 1, // todo
+}
+
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
+#[repr(u8)]
+pub(crate) enum PacketTypePriv{
+    A = 0,
+    B = 1, // todo
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub(crate) enum PacketType {
-    /* data-path kinds — rarely used on the control UART */
-    WifiData = 0x00, // 802.3 / 802.11 data via netif
-    // BtHci      = 0x01,  // HCI ACL / EVT
-    // todo: Oh my. What actually are these?
-    HciCommand = 0x01,
-    HciAclData = 0x02,
-    HciScoData = 0x03,
-    HciEvent = 0x04,
-    HciIsoData = 0x05,
-    // SerialPty  = 0x02,  // AT/PTY stream
-    /* … other data codes, e.g. SCO = 0x03 … */
-    /* private / control events */
-    Event = 0x33, // ← what goes in Ping/Pong, scan results, etc.
+    // todo??
+    Hci(PacketTypeHci),
+    Priv(PacketTypePriv),
+
+    // /* data-path kinds — rarely used on the control UART */
+    // WifiData = 0x00, // 802.3 / 802.11 data via netif
+    // // BtHci      = 0x01,  // HCI ACL / EVT
+    // // todo: Oh my. What actually are these?
+    // HciCommand = 0x01,
+    // HciAclData = 0x02,
+    // HciScoData = 0x03,
+    // HciEvent = 0x04,
+    // HciIsoData = 0x05,
+    // // SerialPty  = 0x02,  // AT/PTY stream
+    // /* … other data codes, e.g. SCO = 0x03 … */
+    // /* private / control events */
+    // Event = 0x33, // ← what goes in Ping/Pong, scan results, etc.
+}
+
+impl PacketType {
+    pub fn val(&self) -> u8 {
+        match self {
+            Self::Hci(p) => *p as u8,
+            Self::Priv(p) => *p as u8,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
@@ -87,6 +113,14 @@ pub(crate) enum IfType {
     Test = 6,
     Eth = 7,
     Max = 8,
+
+    // todo: Embassy net uses:
+    //     Sta = 0,
+    //     Ap = 1,
+    //     Serial = 2,
+    //     Hci = 3,
+    //     Priv = 4,
+    //     Test = 5,
 }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
@@ -144,6 +178,8 @@ struct PayloadHeader {
     pub seq_num: u16,
     pub throttle_cmd: u8, // 2 4-bit values
     // u8 reserved; `reserve2:6`
+
+    // todo: Hmm. This may not be right. Maybe it should be HCI or PRIV only?
     pub pkt_type: PacketType,
 }
 
@@ -153,7 +189,7 @@ impl PayloadHeader {
             if_type,
             if_num: 0,
             flags: 0,
-            len: (RPC_HEADER_SIZE + payload_len + CRC_LEN) as u16,
+            len: (TLV_HEADER_SIZE + payload_len + CRC_LEN) as u16,
             offset: 0,
             checksum: 0, // Computed after the entire frame is constructed.
             seq_num: 0,
@@ -167,7 +203,6 @@ impl PayloadHeader {
 
         // byte 0:   [ if_num:4 | if_type:4 ]
         buf[0] = ((self.if_type as u8) << 4) | (self.if_num & 0x0F);
-
         buf[1] = self.flags;
 
         copy_le!(buf, self.len, 2..4);
@@ -180,7 +215,7 @@ impl PayloadHeader {
         //     | ((self.reserved2 & 0x3F) << 2);
 
         // byte 11: union field
-        buf[11] = self.pkt_type as u8;
+        buf[11] = self.pkt_type.val();
 
         buf
     }
@@ -198,7 +233,10 @@ impl PayloadHeader {
 
         let throttle_cmd = buf[10] & 0x03;
         let reserved2 = (buf[10] >> 2) & 0x3F;
-        let pkt_type = buf[11].try_into().unwrap_or(PacketType::WifiData);
+
+        // todo temp; fix.
+        // let pkt_type = buf[11].try_into().unwrap_or(PacketType::Priv(PacketTypePriv::A));
+        let pkt_type = PacketType::Priv(PacketTypePriv::A);
 
         Self {
             if_type,
@@ -219,7 +257,7 @@ impl PayloadHeader {
 /// everything except the magic byte. (Version through end of payload.
 ///
 /// This is preceded by a Payload leader.
-struct RpcHeader {
+struct TlvHeader {
     pub magic: u8,   // Always 0xEC.
     pub version: u8, // Always 1, for now.
     /// Payload length, not including CRC. LE.
@@ -228,7 +266,7 @@ struct RpcHeader {
     pub command: Command,
 }
 
-impl RpcHeader {
+impl TlvHeader {
     pub fn new(module: Module, command: Command, payload_len: usize) -> Self {
         Self {
             magic: MAGIC,
@@ -239,7 +277,7 @@ impl RpcHeader {
         }
     }
 
-    pub fn to_bytes(&self) -> [u8; RPC_HEADER_SIZE] {
+    pub fn to_bytes(&self) -> [u8; TLV_HEADER_SIZE] {
         let length = self.length.to_le_bytes();
         [
             self.magic,
@@ -270,22 +308,22 @@ impl RpcHeader {
 pub(crate) fn build_frame(out: &mut [u8], rpc_mod: Module, rpc_cmd: Command, payload: &[u8]) {
     let payload_len = payload.len();
 
-    let rpc_header = RpcHeader::new(rpc_mod, rpc_cmd, payload_len);
-    let rpc_bytes = rpc_header.to_bytes();
+    let tlv_header = TlvHeader::new(rpc_mod, rpc_cmd, payload_len);
 
-    let payload_header = PayloadHeader::new(IfType::Priv, PacketType::Event, payload_len);
+    // let payload_header = PayloadHeader::new(IfType::Priv, PacketType::Event, payload_len);
+    let payload_header = PayloadHeader::new(IfType::Priv, PacketType::Priv(PacketTypePriv::A), payload_len);
     out[..PL_HEADER_SIZE].copy_from_slice(&payload_header.to_bytes());
 
-    out[PL_HEADER_SIZE..PL_HEADER_SIZE + RPC_HEADER_SIZE].copy_from_slice(&rpc_header.to_bytes());
+    out[PL_HEADER_SIZE..PL_HEADER_SIZE + TLV_HEADER_SIZE].copy_from_slice(&tlv_header.to_bytes());
 
-    let pl_end = PL_HEADER_SIZE + RPC_HEADER_SIZE + payload_len;
-    out[PL_HEADER_SIZE + RPC_HEADER_SIZE..pl_end].copy_from_slice(payload);
+    let pl_end = PL_HEADER_SIZE + TLV_HEADER_SIZE + payload_len;
+    out[PL_HEADER_SIZE + TLV_HEADER_SIZE..pl_end].copy_from_slice(payload);
 
     // Now that the frame is constructed (Except for the trailing CRC), compute the payload CRC.
     let pl_checksum = calc_crc(&out[..pl_end]);
-    copy_le!(out, pl_checksum, 6..7);
+    copy_le!(out, pl_checksum, 6..8);
 
-    // RPC start (except magic) through payload end.
+    // TLV start (except magic) through payload end.
     let frame_crc = calc_crc(&out[PL_HEADER_SIZE + 1..pl_end]);
     copy_le!(out, frame_crc, pl_end..pl_end + CRC_LEN);
 }

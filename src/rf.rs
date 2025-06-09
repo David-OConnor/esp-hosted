@@ -2,8 +2,11 @@
 
 use heapless::{String, Vec};
 
+#[cfg(feature = "hal")]
+use crate::{Uart, UartError};
+
 use crate::{
-    CRC_LEN, Command, EspError, Module, RPC_HEADER_SIZE, Uart, build_frame, protocol::calc_crc,
+    CRC_LEN, Command, EspError, Module, TLV_HEADER_SIZE, build_frame, protocol::calc_crc,
 };
 
 /// Information about one Wi-Fi access point
@@ -22,6 +25,7 @@ pub struct BleDevice {
     pub rssi: i8,
 }
 
+#[cfg(feature = "hal")]
 // todo: BLE scan (get_ble) is identical – just swap Module::Ble, BleScanStart, BleScanResult, and the payload layout (address + adv-data).
 pub fn get_aps(
     uart: &mut Uart,
@@ -30,14 +34,14 @@ pub fn get_aps(
     let mut out = Vec::<ApInfo, { crate::AP_BUF_MAX }>::new();
 
     // 1 → start scan
-    let mut tx = [0u8; RPC_HEADER_SIZE + CRC_LEN];
+    let mut tx = [0u8; TLV_HEADER_SIZE + CRC_LEN];
     build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
     uart.write(&tx)?;
 
     // 2 → collect results
     loop {
         // read header
-        let mut hdr = [0u8; RPC_HEADER_SIZE];
+        let mut hdr = [0u8; TLV_HEADER_SIZE];
         // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
         uart.read(&mut hdr)?;
 
@@ -62,12 +66,12 @@ pub fn get_aps(
         uart.read(&mut buf[..len + CRC_LEN])?;
 
         // verify CRC
-        let mut full = [0u8; RPC_HEADER_SIZE + 256];
-        full[..RPC_HEADER_SIZE].copy_from_slice(&hdr);
-        full[RPC_HEADER_SIZE..RPC_HEADER_SIZE + len + CRC_LEN]
+        let mut full = [0u8; TLV_HEADER_SIZE + 256];
+        full[..TLV_HEADER_SIZE].copy_from_slice(&hdr);
+        full[TLV_HEADER_SIZE..TLV_HEADER_SIZE + len + CRC_LEN]
             .copy_from_slice(&buf[..len + CRC_LEN]);
         let rx_crc = u16::from_le_bytes(buf[len..len + 2].try_into().unwrap());
-        if calc_crc(&full[..RPC_HEADER_SIZE + len]) != rx_crc {
+        if calc_crc(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
             return Err(EspError::CrcMismatch);
         }
 
