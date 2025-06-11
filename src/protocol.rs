@@ -7,7 +7,7 @@ use num_enum::TryFromPrimitive;
 
 use crate::{copy_le, parse_le, transport::compute_checksum};
 use crate::transport::{ESP_PRIV_PACKET_TYPE, RPC_EP_NAME_EVT, RPC_EP_NAME_RSP};
-
+use crate::util::{decode_varint, encode_varint};
 
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
 
@@ -26,7 +26,7 @@ pub(crate) const RPC_HEADER_MAX_SIZE: usize = 8;
 
 pub(crate) const CRC_SIZE: usize = 2; // todo: Determine if you need this; for trailing CRC.
 
-pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE
+pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
 
 static SEQ_NUM: AtomicU16 = AtomicU16::new(0);
 
@@ -426,7 +426,7 @@ pub(crate) fn slip_encode(src: &[u8], out: &mut [u8]) -> usize {
 struct PayloadHeader {
     /// Interface type
     pub if_type: IfType, // 2 4-bit values
-    /// Interface number
+    /// Interface number. 0 may be a good default??
     pub if_num: u8, // 2 4-bit values
     pub flags: u8,
     /// Payload length
@@ -455,6 +455,7 @@ impl PayloadHeader {
 
         Self {
             if_type,
+            // todo: should we pass if_num as a param? 0 to start?
             if_num: 0,
             flags: 0,
             len,
@@ -573,7 +574,7 @@ impl RpcEndpoint {
 // }
 
 // todo: QC this!
-pub struct RPcHeader {
+pub struct RpcHeader {
     pub id: RpcId,
     pub len: u16,
 }
@@ -636,43 +637,6 @@ impl RpcHeader {
     }
 }
 
-/* ------------------------------------------------------------------------- */
-/*  Mini “noop” var-int helpers – good enough for u16 values                 */
-/* ------------------------------------------------------------------------- */
-
-/// Encodes `v` as little-endian 7-bit var-int.
-/// Returns number of bytes written (1–3 for a `u16`).
-fn encode_varint(mut v: u64, out: &mut [u8]) -> usize {
-    let mut idx = 0;
-    loop {
-        let byte = (v & 0x7F) as u8;
-        v >>= 7;
-        if v == 0 {
-            out[idx] = byte;                   // last byte – high bit clear
-            idx += 1;
-            break;
-        } else {
-            out[idx] = byte | 0x80;            // more bytes follow
-            idx += 1;
-        }
-    }
-    idx
-}
-
-/// Decodes a little-endian 7-bit var-int.
-/// Returns `(value, bytes_consumed)`.
-fn decode_varint(input: &[u8]) -> (u64, usize) {
-    let mut val = 0u64;
-    let mut shift = 0;
-    for (idx, &byte) in input.iter().enumerate() {
-        val |= ((byte & 0x7F) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return (val, idx + 1);
-        }
-        shift += 7;
-    }
-    panic!("unterminated var-int");
-}
 
 /// Frame structure:
 /// Bytes 0..12: Payload header.
@@ -682,7 +646,8 @@ fn decode_varint(input: &[u8]) -> (u64, usize) {
 // pub(crate) fn build_frame(out: &mut [u8], rpc_mod: Module, rpc_cmd: Command, payload: &[u8]) {
 pub(crate) fn build_frame(
     out: &mut [u8],
-    rpc_header: &RPcHeader,
+    // todo: Should we handle RpcHeader here, or elsewhere?
+    // rpc_header: &RpcHeader,
     payload: &[u8],
 ) {
     let payload_len = payload.len();
@@ -721,10 +686,12 @@ pub(crate) fn build_frame(
     out[i..i + payload_len].copy_from_slice(payload);
     i += payload_len;
 
+
+
     // system_design...: "**Checksum Coverage**: The checksum covers the **entire frame** including:
     // 1. Complete `esp_payload_header` (with checksum field set to 0 during calculation)
     // 2. Complete payload data"
     let pl_checksum = compute_checksum(&out[..i]);
-    defmt::println!("Pl checksum we're sending: {:?}", pl_checksum);
+    println!("Pl checksum we're sending: {:?}", pl_checksum);
     copy_le!(out, pl_checksum, 6..8);
 }

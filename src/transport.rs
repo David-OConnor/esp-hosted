@@ -1,5 +1,7 @@
 //! From `esp_hosted_transport.h`
 
+use num_enum::TryFromPrimitive;
+
 const PRIO_Q_SERIAL: u8 = 0;
 const PRIO_Q_BT: u8 = 1;
 const PRIO_Q_OTHERS: u8 = 2;
@@ -22,13 +24,13 @@ pub(crate) enum H_FLOW_CTRL {
     Off = 2,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 pub(crate) enum ESP_PRIV_PACKET_TYPE {
     ESP_PACKET_TYPE_EVENT = 0x33,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 pub(crate) enum ESP_PRIV_EVENT_TYPE {
     ESP_PRIV_EVENT_INIT = 0x22,

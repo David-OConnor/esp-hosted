@@ -7,11 +7,11 @@
 mod protocol;
 mod rf;
 mod transport;
+mod util;
 // mod misc;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crc_any::{CRCu8, CRCu16};
 use defmt::println;
 #[cfg(feature = "hal")]
 use hal::{
@@ -32,7 +32,7 @@ macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
 
-use crate::protocol::{Module, build_frame, HEADER_SIZE, RPcHeader, RpcId, CRC_SIZE};
+use crate::protocol::{Module, build_frame, HEADER_SIZE, RpcId, CRC_SIZE, RpcHeader, RPC_HEADER_MAX_SIZE};
 use crate::transport::compute_checksum;
 
 #[cfg(feature = "hal")]
@@ -70,17 +70,41 @@ impl From<UartError> for EspError {
 #[cfg(feature = "hal")]
 /// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
 pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
-    // todo nope
-    const FRAME_LEN: usize = HEADER_SIZE + 0 + CRC_SIZE;
+    const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 9 + CRC_SIZE;
 
     let mut frame_buf = [0; FRAME_LEN];
 
-    let rpc_header = RPcHeader {
+    let iface_num = 0;  // 0 = STA, 1 = AP
+
+    // todo: Put this in a build-RPC fn, or build it into build_frame.
+    let rpc_header = RpcHeader {
         id: RpcId::ReqWifiApGetStaList,
-        len: 0, // todo?
+        len: 1, // Payload len of 1: Interface number.
     };
 
-    build_frame(&mut frame_buf, &[]);
+    let mut payload = [0; 9];
+
+    // todo: Is it always 5? If so, use RPC_HEADER_SIZE = 5.
+    let rpc_header_size = rpc_header.to_bytes(&mut payload);
+    let mut i =  rpc_header_size;
+    println!("RPC HEADER SIZE: {:?}", rpc_header_size);
+
+    // field #2, wire-type=2 ?
+    // copy_le!(payload, 12_u16, i..i + 2);
+    // todo: Look up where this comes from.
+    payload[i] = 0x12;  // Tag byte.
+    i += 1;
+
+    // This is a variant.
+    payload[i] = 1; // Body length in bytes?
+    i += 1;
+
+    payload[i] = iface_num;
+    i += 1;
+
+    build_frame(&mut frame_buf, &payload);
+
+    // todo: Do we copy the payload checksum at bytes 6..8 to the end of the buffer?
 
     uart.write(&frame_buf)?;
 
