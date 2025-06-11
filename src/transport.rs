@@ -11,8 +11,8 @@ const SERIAL_IF_FILE: &str = "/dev/esps0";
 
 /* Protobuf related info */
 /* Endpoints registered must have same string length */
-const RPC_EP_NAME_RSP: &str = "RPCRsp";
-const RPC_EP_NAME_EVT: &str = "RPCEvt";
+pub(crate) const RPC_EP_NAME_RSP: &str = "RPCRsp";
+pub(crate) const RPC_EP_NAME_EVT: &str = "RPCEvt";
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]

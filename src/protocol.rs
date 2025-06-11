@@ -4,15 +4,20 @@ use defmt::Format;
 use num_enum::TryFromPrimitive;
 
 use crate::{copy_le, parse_le, transport::compute_checksum};
-
+use crate::transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP};
 // pub(crate) const MAGIC: u8 = 0xEC;
 // pub(crate) const VERSION: u8 = 1;
 
+pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
+
 // The 6 static bytes in the TLV header: endpoint type (1), endpoint length (2), data type (1),
 // data length (2). Doesn't include the endpoint value, which is 8-10 (?)
-pub(crate) const TLV_HEADER_SIZE: usize = 6;
-pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
-pub(crate) const CRC_LEN: usize = 2;
+const TLV_HEADER_SIZE: usize = 6;
+// RPC_EP_NAME_EVT is the same size.
+pub(crate) const TLV_SIZE: usize = TLV_HEADER_SIZE + RPC_EP_NAME_RSP.len();
+
+// Contains both the PL header and TLV header. Everything except the payload.
+pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
 
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
@@ -417,7 +422,7 @@ struct PayloadHeader {
     /// Payload length
     /// "Payload starts the next byte after header->offset"
     pub len: u16,
-    /// Offset to payload
+    /// Offset to payload. todo: Is this always 12?
     pub offset: u16,
     /// Header + payload checksum
     pub checksum: u16,
@@ -432,18 +437,20 @@ struct PayloadHeader {
 }
 
 impl PayloadHeader {
-    pub fn new(if_type: IfType, pkt_type: PacketType, payload_len: usize) -> Self {
+    pub fn new(if_type: IfType, pkt_type: PacketType,  payload_len: usize) -> Self {
         // Len is the number of bytes following the header. (all)
-        let len = (TLV_HEADER_SIZE + EndpointValue::CtrlReq.endpoint_length() as usize + payload_len) as u16;
+        let len = (TLV_SIZE + payload_len) as u16;
+
         Self {
             if_type,
             if_num: 0,
             flags: 0,
             len,
-            offset: 0,
+            offset: PL_HEADER_SIZE as u16,
             // Computed after the entire frame is constructed. Must be set to 0 for
             // now, as this goes into the checksum calculation.
             checksum: 0,
+            // Todo: This should increment.
             seq_num: 0,
             throttle_cmd: 0,
             pkt_type,
@@ -454,7 +461,8 @@ impl PayloadHeader {
         let mut buf = [0; PL_HEADER_SIZE];
 
         // byte 0:   [ if_num:4 | if_type:4 ]
-        buf[0] = ((self.if_type as u8) << 4) | (self.if_num & 0x0F);
+        buf[0] = (self.if_num << 4) | ((self.if_type as u8) & 0x0F);
+
         buf[1] = self.flags;
 
         copy_le!(buf, self.len, 2..4);
@@ -512,29 +520,32 @@ pub(crate) enum EndpointType {
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 /// Type-length-value header. See host/drivers/virtual_serial_if/serial_if.c
-pub(crate) enum EndpointValue {
-    CtrlReq,
+pub(crate) enum RpcEndpoint {
     CtrlResp,
     CtrlEvent,
 }
 
-impl EndpointValue {
-    pub fn to_bytes(&self, buf: &mut [u8]) {
-        let slice: &[u8] = match self {
-            Self::CtrlReq   => b"CTRL_REQ",
-            Self::CtrlResp  => b"CTRL_RESP",
-            Self::CtrlEvent => b"CTRL_EVENT",
-        };
-        buf[0..slice.len()].copy_from_slice(slice);
+impl RpcEndpoint {
+    pub fn as_bytes(&self) -> &'static [u8] {
+         match self {
+            Self::CtrlResp   => RPC_EP_NAME_RSP,
+            Self::CtrlEvent  => RPC_EP_NAME_EVT
+        }.as_bytes()
     }
-
-    pub fn endpoint_length(&self) -> u16 {
-        match self {
-            Self::CtrlReq => 8,
-            Self::CtrlResp => 9,
-            Self::CtrlEvent => 10,
-        }
-    }
+    // pub fn to_bytes(&self, buf: &mut [u8]) {
+    //     let slice: &[u8] = match self {
+    //         Self::CtrlResp   => RPC_EP_NAME_RSP,
+    //         Self::CtrlEvent  => RPC_EP_NAME_EVT
+    //     }.as_bytes();
+    //     buf[0..slice.len()].copy_from_slice(slice);
+    // }
+    //
+    // pub fn endpoint_length(&self) -> u16 {
+    //     match self {
+    //         Self::CtrlResp => RPC_EP_NAME_RSP.len() as u16,
+    //         Self::CtrlEvent => 10,
+    //     }
+    // }
 }
 
 // /// Type-length-value header. See host/drivers/virtual_serial_if/serial_if.c
@@ -562,25 +573,27 @@ pub(crate) fn build_frame(
 ) {
     let payload_len = payload.len();
 
-    // todo: Should the payload header include the TLV header in the len?
+    // From `serial_if.c`: Always Resp for compose. Either Resp or Event from parse. (host-side)
+    let endpoint_value = RpcEndpoint::CtrlResp.as_bytes();
+    let endpoint_len = endpoint_value.len() as u16;
+
     let payload_header = PayloadHeader::new(
-        IfType::Priv,
+        IfType::Serial,
         PacketType::Priv(PacketTypePriv::A),
         payload_len,
     );
     out[..PL_HEADER_SIZE].copy_from_slice(&payload_header.to_bytes());
 
     let mut i = PL_HEADER_SIZE;
+
     out[i] = EndpointType::EndpointName as u8;
     i += 1;
 
-    let endpoint_length = EndpointValue::CtrlReq.endpoint_length() as u8;
-    copy_le!(out, endpoint_length, i..i + 2);
+    copy_le!(out, endpoint_len, i..i + 2);
     i += 2;
 
-    let endpoint_value = EndpointValue::CtrlReq; // Hard-coded for transmission?
-    endpoint_value.to_bytes(&mut out[i..i + endpoint_length as usize]);
-    i += endpoint_length as usize;
+    out[i..i + endpoint_len as usize].copy_from_slice(endpoint_value);
+    i += endpoint_len as usize;
 
     out[i] = EndpointType::Data as u8;
     i += 1;
@@ -595,5 +608,6 @@ pub(crate) fn build_frame(
     // 1. Complete `esp_payload_header` (with checksum field set to 0 during calculation)
     // 2. Complete payload data"
     let pl_checksum = compute_checksum(&out[..i]);
+    defmt::println!("Pl checksum we're sending: {:?}", pl_checksum);
     copy_le!(out, pl_checksum, 6..8);
 }

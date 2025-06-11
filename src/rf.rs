@@ -3,11 +3,11 @@
 use heapless::{String, Vec};
 
 use crate::{
-    CRC_LEN, EspError, Module, TLV_HEADER_SIZE, build_frame, protocol::EndpointType,
-    transport::compute_checksum,
+    EspError, Module, build_frame,transport::compute_checksum,
 };
 #[cfg(feature = "hal")]
 use crate::{Uart, UartError};
+use crate::protocol::{HEADER_SIZE};
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -34,17 +34,17 @@ pub fn get_aps(
     let mut out = Vec::<ApInfo, { crate::AP_BUF_MAX }>::new();
 
     // 1 → start scan
-    let mut tx = [0u8; TLV_HEADER_SIZE + CRC_LEN];
+    let mut tx = [0u8; HEADER_SIZE];
     // build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
 
     let endpoint = [0]; // todo temp??
-    build_frame(&mut tx, EndpointType::Data, EndpointType::Data, &endpoint, &[]);
+    build_frame(&mut tx,&[]);
     uart.write(&tx)?;
 
     // 2 → collect results
     loop {
         // read header
-        let mut hdr = [0u8; TLV_HEADER_SIZE];
+        let mut hdr = [0u8; HEADER_SIZE];
         // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
         uart.read(&mut hdr)?;
 
@@ -54,7 +54,7 @@ pub fn get_aps(
         if hdr[4] == Module::Ctrl as u8 {
             // todo: Sloppy to discard byte swith static len buf.
             let mut temp_buf = [0; 100];
-            uart.read(&mut temp_buf[..len + CRC_LEN])?; // helper that reads & drops
+            uart.read(&mut temp_buf[..len])?; // helper that reads & drops
             continue;
         }
 
@@ -66,15 +66,15 @@ pub fn get_aps(
         // read payload + CRC
         let mut buf = [0u8; 256];
         // uart.read_exact_timeout(&mut buf[..len + CRC_LEN], timeout_ms)?;
-        uart.read(&mut buf[..len + CRC_LEN])?;
+        uart.read(&mut buf[..len])?;
 
         // verify CRC
-        let mut full = [0u8; TLV_HEADER_SIZE + 256];
-        full[..TLV_HEADER_SIZE].copy_from_slice(&hdr);
-        full[TLV_HEADER_SIZE..TLV_HEADER_SIZE + len + CRC_LEN]
-            .copy_from_slice(&buf[..len + CRC_LEN]);
+        let mut full = [0u8; HEADER_SIZE + 256];
+        full[..HEADER_SIZE].copy_from_slice(&hdr);
+        full[HEADER_SIZE..HEADER_SIZE + len]
+            .copy_from_slice(&buf[..len]);
         let rx_crc = u16::from_le_bytes(buf[len..len + 2].try_into().unwrap());
-        if compute_checksum(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
+        if compute_checksum(&full[..HEADER_SIZE + len]) != rx_crc {
             return Err(EspError::CrcMismatch);
         }
 

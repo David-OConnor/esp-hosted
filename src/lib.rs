@@ -32,9 +32,8 @@ macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
 
-use crate::protocol::{
-    CRC_LEN, Module, PL_HEADER_SIZE, TLV_HEADER_SIZE, EndpointType, build_frame, slip_encode,
-};
+use crate::protocol::{Module, build_frame, HEADER_SIZE};
+use crate::transport::compute_checksum;
 
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
@@ -71,15 +70,12 @@ impl From<UartError> for EspError {
 #[cfg(feature = "hal")]
 /// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
 pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
-    const PING_FRAME_LEN: usize = PL_HEADER_SIZE + TLV_HEADER_SIZE + CRC_LEN;
+    // todo nope
+    const PING_FRAME_LEN: usize = HEADER_SIZE;
 
     let mut frame_buf = [0u8; PING_FRAME_LEN];
 
-    let endpoint = [0]; // todo temp??
-    build_frame(&mut frame_buf, EndpointType::Data, EndpointType::Data, &endpoint, &[]);
-    // build_frame(&mut frame_buf, Module::Ctrl, Command::PingReq, &[]);
-
-    let frame_len = PL_HEADER_SIZE + TLV_HEADER_SIZE + 0 + CRC_LEN;
+    build_frame(&mut frame_buf, &[]);
 
     uart.write(&frame_buf)?;
 
@@ -90,8 +86,8 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
 
     println!("Writing status check frame: {:?}", &frame_buf);
 
-    // let mut hdr = [0; TLV_HEADER_SIZE];
-    let mut hdr = [0; PL_HEADER_SIZE];
+    // let mut hdr = [0; HEADER_SIZE];
+    let mut hdr = [0; 12];
 
     // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
     uart.read(&mut hdr)?;
@@ -109,24 +105,24 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     // --------- receive payload + CRC ---------
     let mut rest = [0; 1_026]; // more than enough for empty payload + CRC
     // uart.read_exact_timeout(&mut rest[..len + CRC_LEN], timeout_ms)?;
-    uart.read(&mut rest[..len + CRC_LEN])?;
+    uart.read(&mut rest[..len])?;
 
     // validate CRC
-    let mut full = [0u8; TLV_HEADER_SIZE + 1_026];
-    full[..TLV_HEADER_SIZE].copy_from_slice(&hdr);
-    full[TLV_HEADER_SIZE..TLV_HEADER_SIZE + len].copy_from_slice(&rest[..len]);
+    let mut full = [0u8; HEADER_SIZE + 1_026];
+    full[..HEADER_SIZE].copy_from_slice(&hdr);
+    full[HEADER_SIZE..HEADER_SIZE + len].copy_from_slice(&rest[..len]);
 
-    let rx_crc = u16::from_le_bytes(rest[len..len + CRC_LEN].try_into().unwrap());
-    if compute_checksum(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
+    let rx_crc = u16::from_le_bytes(rest[len..len].try_into().unwrap());
+    if compute_checksum(&full[..HEADER_SIZE + len]) != rx_crc {
         println!("ESP CRC mismatch"); // todo temp
         return Err(EspError::CrcMismatch);
     }
 
-    // validate that it is indeed a PingResp
-    if hdr[4] != Module::Ctrl as u8 || hdr[5] != Command::PingResp as u8 {
-        println!("ESP Unexpected resp"); // todo temp
-        return Err(EspError::UnexpectedResponse(hdr[5]));
-    }
+    // // validate that it is indeed a PingResp
+    // if hdr[4] != Module::Ctrl as u8 || hdr[5] != Command::PingResp as u8 {
+    //     println!("ESP Unexpected resp"); // todo temp
+    //     return Err(EspError::UnexpectedResponse(hdr[5]));
+    // }
 
     Ok(())
 }
