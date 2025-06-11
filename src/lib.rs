@@ -1,10 +1,12 @@
 #![no_std]
 #![allow(dead_code)]
+#![allow(non_camel_case_types)]
 
 //! An interface for interacting with ESP-Hosted-MCU firmware, via UART.
 
 mod protocol;
 mod rf;
+mod transport;
 // mod misc;
 
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -31,10 +33,7 @@ macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
 
-use crate::protocol::{
-    CRC_LEN, Command, MAGIC, Module, PL_HEADER_SIZE, TLV_HEADER_SIZE, VERSION, build_frame,
-    calc_crc, slip_encode,
-};
+use crate::protocol::{CRC_LEN,  Module, PL_HEADER_SIZE, TLV_HEADER_SIZE,  build_frame, slip_encode, TlvType};
 
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
@@ -74,7 +73,10 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     const PING_FRAME_LEN: usize = PL_HEADER_SIZE + TLV_HEADER_SIZE + CRC_LEN;
 
     let mut frame_buf = [0u8; PING_FRAME_LEN];
-    build_frame(&mut frame_buf, Module::Ctrl, Command::PingReq, &[]);
+
+    let endpoint = [0]; // todo temp??
+    build_frame(&mut frame_buf, TlvType::Data, TlvType::Data, &endpoint, &[]);
+    // build_frame(&mut frame_buf, Module::Ctrl, Command::PingReq, &[]);
 
     let frame_len = PL_HEADER_SIZE + TLV_HEADER_SIZE + 0 + CRC_LEN;
 
@@ -87,19 +89,21 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
 
     println!("Writing status check frame: {:?}", &frame_buf);
 
-    // --------- receive header ---------
-    let mut hdr = [0; TLV_HEADER_SIZE];
+    // let mut hdr = [0; TLV_HEADER_SIZE];
+    let mut hdr = [0; PL_HEADER_SIZE];
 
     // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
     uart.read(&mut hdr)?;
 
     println!("Header buf read: {:?}", hdr);
 
-    if hdr[0] != MAGIC || hdr[1] != VERSION {
-        println!("ESP Unexpected magic or version"); // todo temp
-        return Err(EspError::UnexpectedResponse(hdr[0]));
-    }
+    // if hdr[0] != MAGIC || hdr[1] != VERSION {
+    //     println!("ESP Unexpected magic or version"); // todo temp
+    //     return Err(EspError::UnexpectedResponse(hdr[0]));
+    // }
     let len = u16::from_le_bytes([hdr[2], hdr[3]]) as usize;
+
+    return Ok(());
 
     // --------- receive payload + CRC ---------
     let mut rest = [0; 1_026]; // more than enough for empty payload + CRC
@@ -112,7 +116,7 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     full[TLV_HEADER_SIZE..TLV_HEADER_SIZE + len].copy_from_slice(&rest[..len]);
 
     let rx_crc = u16::from_le_bytes(rest[len..len + CRC_LEN].try_into().unwrap());
-    if calc_crc(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
+    if compute_checksum(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
         println!("ESP CRC mismatch"); // todo temp
         return Err(EspError::CrcMismatch);
     }

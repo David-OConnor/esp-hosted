@@ -6,8 +6,10 @@ use heapless::{String, Vec};
 use crate::{Uart, UartError};
 
 use crate::{
-    CRC_LEN, Command, EspError, Module, TLV_HEADER_SIZE, build_frame, protocol::calc_crc,
+    CRC_LEN, EspError, Module, TLV_HEADER_SIZE, build_frame,
 };
+use crate::protocol::TlvType;
+use crate::transport::compute_checksum;
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -35,7 +37,10 @@ pub fn get_aps(
 
     // 1 → start scan
     let mut tx = [0u8; TLV_HEADER_SIZE + CRC_LEN];
-    build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
+    // build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
+
+    let endpoint = [0]; // todo temp??
+    build_frame(&mut tx, TlvType::Data, TlvType::Data, &endpoint, &[]);
     uart.write(&tx)?;
 
     // 2 → collect results
@@ -55,10 +60,10 @@ pub fn get_aps(
             continue;
         }
 
-        // sanity: expect WifiScanResult
-        if hdr[4] != Module::Wifi as u8 || hdr[5] != Command::WifiScanResult as u8 {
-            return Err(EspError::UnexpectedResponse(hdr[5]));
-        }
+        // // sanity: expect WifiScanResult
+        // if hdr[4] != Module::Wifi as u8 || hdr[5] != Command::WifiScanResult as u8 {
+        //     return Err(EspError::UnexpectedResponse(hdr[5]));
+        // }
 
         // read payload + CRC
         let mut buf = [0u8; 256];
@@ -71,7 +76,7 @@ pub fn get_aps(
         full[TLV_HEADER_SIZE..TLV_HEADER_SIZE + len + CRC_LEN]
             .copy_from_slice(&buf[..len + CRC_LEN]);
         let rx_crc = u16::from_le_bytes(buf[len..len + 2].try_into().unwrap());
-        if calc_crc(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
+        if compute_checksum(&full[..TLV_HEADER_SIZE + len]) != rx_crc {
             return Err(EspError::CrcMismatch);
         }
 
