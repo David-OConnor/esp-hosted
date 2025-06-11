@@ -1,12 +1,13 @@
 //! This module contains the most important parts of the protocol.
 
-use defmt::Format;
+use core::sync::atomic::{Ordering, AtomicU16};
+
+use defmt::{println, Format};
 use num_enum::TryFromPrimitive;
 
 use crate::{copy_le, parse_le, transport::compute_checksum};
-use crate::transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP};
-// pub(crate) const MAGIC: u8 = 0xEC;
-// pub(crate) const VERSION: u8 = 1;
+use crate::transport::{ESP_PRIV_PACKET_TYPE, RPC_EP_NAME_EVT, RPC_EP_NAME_RSP};
+
 
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
 
@@ -17,8 +18,17 @@ const TLV_HEADER_SIZE: usize = 6;
 pub(crate) const TLV_SIZE: usize = TLV_HEADER_SIZE + RPC_EP_NAME_RSP.len();
 
 // Contains both the PL header and TLV header. Everything except the payload.
-pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
+// pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
 
+
+// Worst-case size:  tag(1) + 3-byte varint  + tag(1) + 3-byte varint = 8
+pub(crate) const RPC_HEADER_MAX_SIZE: usize = 8;
+
+pub(crate) const CRC_SIZE: usize = 2; // todo: Determine if you need this; for trailing CRC.
+
+pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE
+
+static SEQ_NUM: AtomicU16 = AtomicU16::new(0);
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
@@ -299,55 +309,55 @@ pub(crate) enum RpcId {
     EventStaDisconnected = 776,
     EventMax = 777,
 }
+//
+// #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
+// #[repr(u8)]
+// pub(crate) enum PacketTypeHci {
+//     A = 0,
+//     B = 1, // todo
+// }
+//
+// #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
+// #[repr(u8)]
+// /// Private
+// pub(crate) enum PacketTypePriv {
+//     A = 0,
+//     B = 1, // todo
+// }
+//
+// #[derive(Clone, Copy, PartialEq)]
+// pub(crate) enum PacketType {
+//     // todo??
+//     Hci(PacketTypeHci),
+//     Priv(PacketTypePriv),
+//     // /* data-path kinds — rarely used on the control UART */
+//     // WifiData = 0x00, // 802.3 / 802.11 data via netif
+//     // // BtHci      = 0x01,  // HCI ACL / EVT
+//     // // todo: Oh my. What actually are these?
+//     // HciCommand = 0x01,
+//     // HciAclData = 0x02,
+//     // HciScoData = 0x03,
+//     // HciEvent = 0x04,
+//     // HciIsoData = 0x05,
+//     // // SerialPty  = 0x02,  // AT/PTY stream
+//     // /* … other data codes, e.g. SCO = 0x03 … */
+//     // /* private / control events */
+//     // Event = 0x33, // ← what goes in Ping/Pong, scan results, etc.
+// }
 
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
-#[repr(u8)]
-pub(crate) enum PacketTypeHci {
-    A = 0,
-    B = 1, // todo
-}
-
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
-#[repr(u8)]
-/// Private
-pub(crate) enum PacketTypePriv {
-    A = 0,
-    B = 1, // todo
-}
-
-#[derive(Clone, Copy, PartialEq)]
-pub(crate) enum PacketType {
-    // todo??
-    Hci(PacketTypeHci),
-    Priv(PacketTypePriv),
-    // /* data-path kinds — rarely used on the control UART */
-    // WifiData = 0x00, // 802.3 / 802.11 data via netif
-    // // BtHci      = 0x01,  // HCI ACL / EVT
-    // // todo: Oh my. What actually are these?
-    // HciCommand = 0x01,
-    // HciAclData = 0x02,
-    // HciScoData = 0x03,
-    // HciEvent = 0x04,
-    // HciIsoData = 0x05,
-    // // SerialPty  = 0x02,  // AT/PTY stream
-    // /* … other data codes, e.g. SCO = 0x03 … */
-    // /* private / control events */
-    // Event = 0x33, // ← what goes in Ping/Pong, scan results, etc.
-}
-
-impl PacketType {
-    pub fn to_byte(&self) -> u8 {
-        match self {
-            Self::Hci(p) => *p as u8,
-            Self::Priv(p) => *p as u8,
-        }
-    }
-
-    pub fn from_byte(val: u8) -> Self {
-        // todo temp; fix.
-        Self::Priv(PacketTypePriv::A)
-    }
-}
+// impl PacketType {
+//     pub fn to_byte(&self) -> u8 {
+//         match self {
+//             Self::Hci(p) => *p as u8,
+//             Self::Priv(p) => *p as u8,
+//         }
+//     }
+//
+//     pub fn from_byte(val: u8) -> Self {
+//         // todo temp; fix.
+//         Self::Priv(PacketTypePriv::A)
+//     }
+// }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
@@ -433,11 +443,13 @@ struct PayloadHeader {
     // u8 reserved; `reserve2:6`; same byte as `throttle_cmd`
 
     // From Esp doc: First 3 bits may be reserved. The remaining bits for HCI or PRivate packet type?
-    pub pkt_type: PacketType,
+    // pub pkt_type: PacketType,
+    // todo: Other variants, like for HCI?
+    pub pkt_type: ESP_PRIV_PACKET_TYPE,
 }
 
 impl PayloadHeader {
-    pub fn new(if_type: IfType, pkt_type: PacketType,  payload_len: usize) -> Self {
+    pub fn new(if_type: IfType, pkt_type: ESP_PRIV_PACKET_TYPE,  payload_len: usize) -> Self {
         // Len is the number of bytes following the header. (all)
         let len = (TLV_SIZE + payload_len) as u16;
 
@@ -450,8 +462,7 @@ impl PayloadHeader {
             // Computed after the entire frame is constructed. Must be set to 0 for
             // now, as this goes into the checksum calculation.
             checksum: 0,
-            // Todo: This should increment.
-            seq_num: 0,
+            seq_num: SEQ_NUM.fetch_add(1, Ordering::SeqCst),
             throttle_cmd: 0,
             pkt_type,
         }
@@ -474,7 +485,7 @@ impl PayloadHeader {
         buf[10] = self.throttle_cmd; // todo: QC if you need a shift.
 
         // byte 11: union field
-        buf[11] = self.pkt_type.to_byte();
+        buf[11] = self.pkt_type as u8;
 
         buf
     }
@@ -491,7 +502,7 @@ impl PayloadHeader {
         let seq_num = parse_le!(buf, u16, 8..10);
 
         let throttle_cmd = buf[10] & 3;
-        let pkt_type = PacketType::from_byte(buf[11]);
+        let pkt_type = buf[11].try_into().unwrap();
 
         Self {
             if_type,
@@ -520,6 +531,8 @@ pub(crate) enum EndpointType {
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 /// Type-length-value header. See host/drivers/virtual_serial_if/serial_if.c
+/// Note that other sources imply there should also be a CtrlReq, which is the only
+/// one the host sends. (Is that from esp-hosted-nonmcu?)
 pub(crate) enum RpcEndpoint {
     CtrlResp,
     CtrlEvent,
@@ -528,7 +541,9 @@ pub(crate) enum RpcEndpoint {
 impl RpcEndpoint {
     pub fn as_bytes(&self) -> &'static [u8] {
          match self {
+             /// Host only sends this.
             Self::CtrlResp   => RPC_EP_NAME_RSP,
+             /// Slave sends either.
             Self::CtrlEvent  => RPC_EP_NAME_EVT
         }.as_bytes()
     }
@@ -557,6 +572,108 @@ impl RpcEndpoint {
 //     // pub data_value: &[u8], // data length
 // }
 
+// todo: QC this!
+pub struct RPcHeader {
+    pub id: RpcId,
+    pub len: u16,
+}
+
+// impl RPcHeader {
+//     pub fn to_bytes(&self, buf: &mut [u8]) {
+//         copy_le!(buf, self.id as u16, 0..2);
+//         copy_le!(buf, self.len, 2..4);
+//     }
+//
+//     pub fn from_bytes(buf: &[u8]) -> Self {
+//         Self {
+//             id: parse_le!(buf, u16, 0..2).try_into().unwrap(),
+//             len: parse_le!(buf, u16, 2..4)
+//         }
+//     }
+// }
+
+// todo: QC this!
+impl RpcHeader {
+    /// Encode as protobuf (wire-type 0) into `buf`.
+    /// Returns the number of bytes written.
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        // ── field 1: id ───────────────────────────────
+        buf[i] = 0x08;                                    // tag = 1, WT = 0
+        i += 1;
+        i += encode_varint(self.id as u64, &mut buf[i..]);
+
+        // ── field 2: payload_len ──────────────────────
+        buf[i] = 0x10;                                    // tag = 2, WT = 0
+        i += 1;
+        i += encode_varint(self.len as u64, &mut buf[i..]);
+
+        i
+    }
+
+    /// Decode from `buf`, returning `(header, bytes_consumed)`.
+    pub fn from_bytes(buf: &[u8]) -> (Self, usize) {
+        let mut i = 0;
+
+        assert_eq!(buf[i], 0x08);                         // tag 1
+        i += 1;
+        let (id_val, n) = decode_varint(&buf[i..]);
+        i += n;
+
+        assert_eq!(buf[i], 0x10);                         // tag 2
+        i += 1;
+        let (len_val, n) = decode_varint(&buf[i..]);
+        i += n;
+
+        (
+            Self {
+                id:  (id_val as u16).try_into().unwrap(),
+                len: len_val as u16,
+            },
+            i,
+        )
+    }
+}
+
+/* ------------------------------------------------------------------------- */
+/*  Mini “noop” var-int helpers – good enough for u16 values                 */
+/* ------------------------------------------------------------------------- */
+
+/// Encodes `v` as little-endian 7-bit var-int.
+/// Returns number of bytes written (1–3 for a `u16`).
+fn encode_varint(mut v: u64, out: &mut [u8]) -> usize {
+    let mut idx = 0;
+    loop {
+        let byte = (v & 0x7F) as u8;
+        v >>= 7;
+        if v == 0 {
+            out[idx] = byte;                   // last byte – high bit clear
+            idx += 1;
+            break;
+        } else {
+            out[idx] = byte | 0x80;            // more bytes follow
+            idx += 1;
+        }
+    }
+    idx
+}
+
+/// Decodes a little-endian 7-bit var-int.
+/// Returns `(value, bytes_consumed)`.
+fn decode_varint(input: &[u8]) -> (u64, usize) {
+    let mut val = 0u64;
+    let mut shift = 0;
+    for (idx, &byte) in input.iter().enumerate() {
+        val |= ((byte & 0x7F) as u64) << shift;
+        if byte & 0x80 == 0 {
+            return (val, idx + 1);
+        }
+        shift += 7;
+    }
+    panic!("unterminated var-int");
+}
+
 /// Frame structure:
 /// Bytes 0..12: Payload header.
 /// Bytes 12..18: Payload
@@ -565,10 +682,7 @@ impl RpcEndpoint {
 // pub(crate) fn build_frame(out: &mut [u8], rpc_mod: Module, rpc_cmd: Command, payload: &[u8]) {
 pub(crate) fn build_frame(
     out: &mut [u8],
-    // endpoint_type: EndpointType,
-    // data_type: EndpointType,
-    // endpoint: &[u8],
-    // todo: A message type here likely.
+    rpc_header: &RPcHeader,
     payload: &[u8],
 ) {
     let payload_len = payload.len();
@@ -577,16 +691,19 @@ pub(crate) fn build_frame(
     let endpoint_value = RpcEndpoint::CtrlResp.as_bytes();
     let endpoint_len = endpoint_value.len() as u16;
 
+    let packet_type = ESP_PRIV_PACKET_TYPE::ESP_PACKET_TYPE_EVENT; // todo: QC this!
+
     let payload_header = PayloadHeader::new(
+        // todo: Serial? Sta? What should IfType be?
         IfType::Serial,
-        PacketType::Priv(PacketTypePriv::A),
+        packet_type,
         payload_len,
     );
     out[..PL_HEADER_SIZE].copy_from_slice(&payload_header.to_bytes());
 
     let mut i = PL_HEADER_SIZE;
 
-    out[i] = EndpointType::EndpointName as u8;
+    out[i] = EndpointType::EndpointName as _;
     i += 1;
 
     copy_le!(out, endpoint_len, i..i + 2);
@@ -595,7 +712,7 @@ pub(crate) fn build_frame(
     out[i..i + endpoint_len as usize].copy_from_slice(endpoint_value);
     i += endpoint_len as usize;
 
-    out[i] = EndpointType::Data as u8;
+    out[i] = EndpointType::Data as _;
     i += 1;
 
     copy_le!(out, payload_len as u16, i..i + 2);

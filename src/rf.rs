@@ -7,7 +7,7 @@ use crate::{
 };
 #[cfg(feature = "hal")]
 use crate::{Uart, UartError};
-use crate::protocol::{HEADER_SIZE};
+use crate::protocol::{RPcHeader, RpcId, HEADER_SIZE};
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -37,8 +37,12 @@ pub fn get_aps(
     let mut tx = [0u8; HEADER_SIZE];
     // build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
 
-    let endpoint = [0]; // todo temp??
-    build_frame(&mut tx,&[]);
+    let rpc_header = RPcHeader {
+        id: RpcId::ReqWifiApGetStaList,
+        len: 0, // todo?
+    };
+
+    build_frame(&mut tx, &rpc_header, &[]);
     uart.write(&tx)?;
 
     // 2 → collect results

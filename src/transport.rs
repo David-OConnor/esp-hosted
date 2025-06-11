@@ -16,7 +16,7 @@ pub(crate) const RPC_EP_NAME_EVT: &str = "RPCEvt";
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
-enum H_FLOW_CTRL {
+pub(crate) enum H_FLOW_CTRL {
     Nc = 0,
     On = 1,
     Off = 2,
@@ -24,18 +24,18 @@ enum H_FLOW_CTRL {
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
-enum ESP_PRIV_PACKET_TYPE {
+pub(crate) enum ESP_PRIV_PACKET_TYPE {
     ESP_PACKET_TYPE_EVENT = 0x33,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
-enum ESP_PRIV_EVENT_TYPE {
+pub(crate) enum ESP_PRIV_EVENT_TYPE {
     ESP_PRIV_EVENT_INIT = 0x22,
 }
 
 #[repr(u8)]
-enum SLAVE_CONFIG_PRIV_TAG_TYPE {
+pub(crate) enum SLAVE_CONFIG_PRIV_TAG_TYPE {
     HOST_CAPABILITIES = 0x44,
     RCVD_ESP_FIRMWARE_CHIP_ID,
     SLV_CONFIG_TEST_RAW_TP,
@@ -48,7 +48,7 @@ const ESP_TRANSPORT_SPI_MAX_BUF_SIZE: u16 = 1600;
 const ESP_TRANSPORT_SPI_HD_MAX_BUF_SIZE: u16 = 1600;
 const ESP_TRANSPORT_UART_MAX_BUF_SIZE: u16 = 1600;
 
-struct esp_priv_event {
+pub(crate) struct esp_priv_event {
     event_type: u8,
     event_len: u8,
     event_data: u8, // ([0]??) Is this an arary?

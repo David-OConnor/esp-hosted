@@ -32,7 +32,7 @@ macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
 
-use crate::protocol::{Module, build_frame, HEADER_SIZE};
+use crate::protocol::{Module, build_frame, HEADER_SIZE, RPcHeader, RpcId, CRC_SIZE};
 use crate::transport::compute_checksum;
 
 #[cfg(feature = "hal")]
@@ -71,9 +71,14 @@ impl From<UartError> for EspError {
 /// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
 pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     // todo nope
-    const PING_FRAME_LEN: usize = HEADER_SIZE;
+    const FRAME_LEN: usize = HEADER_SIZE + 0 + CRC_SIZE;
 
-    let mut frame_buf = [0u8; PING_FRAME_LEN];
+    let mut frame_buf = [0; FRAME_LEN];
+
+    let rpc_header = RPcHeader {
+        id: RpcId::ReqWifiApGetStaList,
+        len: 0, // todo?
+    };
 
     build_frame(&mut frame_buf, &[]);
 
