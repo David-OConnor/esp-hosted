@@ -1,12 +1,15 @@
-//! This module contains the basic protocol used by all messages.
+//! This module contains the most important parts of the protocol.
 
 use defmt::Format;
 use num_enum::TryFromPrimitive;
-use crate::{copy_le, parse_le};
-use crate::transport::compute_checksum;
+
+use crate::{copy_le, parse_le, transport::compute_checksum};
 
 // pub(crate) const MAGIC: u8 = 0xEC;
 // pub(crate) const VERSION: u8 = 1;
+
+// The 6 static bytes in the TLV header: endpoint type (1), endpoint length (2), data type (1),
+// data length (2). Doesn't include the endpoint value, which is 8-10 (?)
 pub(crate) const TLV_HEADER_SIZE: usize = 6;
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
 pub(crate) const CRC_LEN: usize = 2;
@@ -71,230 +74,230 @@ pub(crate) enum RpcType {
 #[repr(u16)]
 // See `esp_hosted_rpc.proto`, enum by this name.
 pub(crate) enum RpcId {
-    MsgIdInvalid                         = 0,
-    ReqBase                              = 256,
-    ReqGetMacAddress                     = 257,
-    ReqSetMacAddress                     = 258,
-    ReqGetWifiMode                       = 259,
-    ReqSetWifiMode                       = 260,
+    MsgIdInvalid = 0,
+    ReqBase = 256,
+    ReqGetMacAddress = 257,
+    ReqSetMacAddress = 258,
+    ReqGetWifiMode = 259,
+    ReqSetWifiMode = 260,
 
-    ReqWifiSetPs                         = 270,
-    ReqWifiGetPs                         = 271,
+    ReqWifiSetPs = 270,
+    ReqWifiGetPs = 271,
 
-    ReqOtaBegin                          = 272,
-    ReqOtaWrite                          = 273,
-    ReqOtaEnd                            = 274,
+    ReqOtaBegin = 272,
+    ReqOtaWrite = 273,
+    ReqOtaEnd = 274,
 
-    ReqWifiSetMaxTxPower                 = 275,
-    ReqWifiGetMaxTxPower                 = 276,
+    ReqWifiSetMaxTxPower = 275,
+    ReqWifiGetMaxTxPower = 276,
 
-    ReqConfigHeartbeat                   = 277,
+    ReqConfigHeartbeat = 277,
 
-    ReqWifiInit                          = 278,
-    ReqWifiDeinit                        = 279,
-    ReqWifiStart                         = 280,
-    ReqWifiStop                          = 281,
-    ReqWifiConnect                       = 282,
-    ReqWifiDisconnect                    = 283,
-    ReqWifiSetConfig                     = 284,
-    ReqWifiGetConfig                     = 285,
+    ReqWifiInit = 278,
+    ReqWifiDeinit = 279,
+    ReqWifiStart = 280,
+    ReqWifiStop = 281,
+    ReqWifiConnect = 282,
+    ReqWifiDisconnect = 283,
+    ReqWifiSetConfig = 284,
+    ReqWifiGetConfig = 285,
 
-    ReqWifiScanStart                     = 286,
-    ReqWifiScanStop                      = 287,
-    ReqWifiScanGetApNum                  = 288,
-    ReqWifiScanGetApRecords              = 289,
-    ReqWifiClearApList                   = 290,
+    ReqWifiScanStart = 286,
+    ReqWifiScanStop = 287,
+    ReqWifiScanGetApNum = 288,
+    ReqWifiScanGetApRecords = 289,
+    ReqWifiClearApList = 290,
 
-    ReqWifiRestore                       = 291,
-    ReqWifiClearFastConnect              = 292,
-    ReqWifiDeauthSta                     = 293,
-    ReqWifiStaGetApInfo                  = 294,
+    ReqWifiRestore = 291,
+    ReqWifiClearFastConnect = 292,
+    ReqWifiDeauthSta = 293,
+    ReqWifiStaGetApInfo = 294,
 
-    ReqWifiSetProtocol                   = 297,
-    ReqWifiGetProtocol                   = 298,
-    ReqWifiSetBandwidth                  = 299,
-    ReqWifiGetBandwidth                  = 300,
-    ReqWifiSetChannel                    = 301,
-    ReqWifiGetChannel                    = 302,
-    ReqWifiSetCountry                    = 303,
-    ReqWifiGetCountry                    = 304,
+    ReqWifiSetProtocol = 297,
+    ReqWifiGetProtocol = 298,
+    ReqWifiSetBandwidth = 299,
+    ReqWifiGetBandwidth = 300,
+    ReqWifiSetChannel = 301,
+    ReqWifiGetChannel = 302,
+    ReqWifiSetCountry = 303,
+    ReqWifiGetCountry = 304,
 
-    ReqWifiSetPromiscuous                = 305,
-    ReqWifiGetPromiscuous                = 306,
-    ReqWifiSetPromiscuousFilter          = 307,
-    ReqWifiGetPromiscuousFilter          = 308,
-    ReqWifiSetPromiscuousCtrlFilter      = 309,
-    ReqWifiGetPromiscuousCtrlFilter      = 310,
+    ReqWifiSetPromiscuous = 305,
+    ReqWifiGetPromiscuous = 306,
+    ReqWifiSetPromiscuousFilter = 307,
+    ReqWifiGetPromiscuousFilter = 308,
+    ReqWifiSetPromiscuousCtrlFilter = 309,
+    ReqWifiGetPromiscuousCtrlFilter = 310,
 
-    ReqWifiApGetStaList                  = 311,
-    ReqWifiApGetStaAid                   = 312,
-    ReqWifiSetStorage                    = 313,
-    ReqWifiSetVendorIe                   = 314,
-    ReqWifiSetEventMask                  = 315,
-    ReqWifiGetEventMask                  = 316,
-    ReqWifi80211Tx                       = 317,
+    ReqWifiApGetStaList = 311,
+    ReqWifiApGetStaAid = 312,
+    ReqWifiSetStorage = 313,
+    ReqWifiSetVendorIe = 314,
+    ReqWifiSetEventMask = 315,
+    ReqWifiGetEventMask = 316,
+    ReqWifi80211Tx = 317,
 
-    ReqWifiSetCsiConfig                  = 318,
-    ReqWifiSetCsi                        = 319,
+    ReqWifiSetCsiConfig = 318,
+    ReqWifiSetCsi = 319,
 
-    ReqWifiSetAntGpio                    = 320,
-    ReqWifiGetAntGpio                    = 321,
-    ReqWifiSetAnt                        = 322,
-    ReqWifiGetAnt                        = 323,
+    ReqWifiSetAntGpio = 320,
+    ReqWifiGetAntGpio = 321,
+    ReqWifiSetAnt = 322,
+    ReqWifiGetAnt = 323,
 
-    ReqWifiGetTsfTime                    = 324,
-    ReqWifiSetInactiveTime               = 325,
-    ReqWifiGetInactiveTime               = 326,
-    ReqWifiStatisDump                    = 327,
-    ReqWifiSetRssiThreshold              = 328,
+    ReqWifiGetTsfTime = 324,
+    ReqWifiSetInactiveTime = 325,
+    ReqWifiGetInactiveTime = 326,
+    ReqWifiStatisDump = 327,
+    ReqWifiSetRssiThreshold = 328,
 
-    ReqWifiFtmInitiateSession            = 329,
-    ReqWifiFtmEndSession                 = 330,
-    ReqWifiFtmRespSetOffset              = 331,
+    ReqWifiFtmInitiateSession = 329,
+    ReqWifiFtmEndSession = 330,
+    ReqWifiFtmRespSetOffset = 331,
 
-    ReqWifiConfig11bRate                 = 332,
+    ReqWifiConfig11bRate = 332,
     ReqWifiConnectionlessModuleSetWakeInterval = 333,
-    ReqWifiSetCountryCode                = 334,
-    ReqWifiGetCountryCode                = 335,
-    ReqWifiConfig80211TxRate             = 336,
-    ReqWifiDisablePmfConfig              = 337,
-    ReqWifiStaGetAid                     = 338,
-    ReqWifiStaGetNegotiatedPhymode       = 339,
-    ReqWifiSetDynamicCs                  = 340,
-    ReqWifiStaGetRssi                    = 341,
+    ReqWifiSetCountryCode = 334,
+    ReqWifiGetCountryCode = 335,
+    ReqWifiConfig80211TxRate = 336,
+    ReqWifiDisablePmfConfig = 337,
+    ReqWifiStaGetAid = 338,
+    ReqWifiStaGetNegotiatedPhymode = 339,
+    ReqWifiSetDynamicCs = 340,
+    ReqWifiStaGetRssi = 341,
 
-    ReqWifiSetProtocols                  = 342,
-    ReqWifiGetProtocols                  = 343,
-    ReqWifiSetBandwidths                 = 344,
-    ReqWifiGetBandwidths                 = 345,
-    ReqWifiSetBand                       = 346,
-    ReqWifiGetBand                       = 347,
-    ReqWifiSetBandMode                   = 348,
-    ReqWifiGetBandMode                   = 349,
+    ReqWifiSetProtocols = 342,
+    ReqWifiGetProtocols = 343,
+    ReqWifiSetBandwidths = 344,
+    ReqWifiGetBandwidths = 345,
+    ReqWifiSetBand = 346,
+    ReqWifiGetBand = 347,
+    ReqWifiSetBandMode = 348,
+    ReqWifiGetBandMode = 349,
 
-    ReqGetCoprocessorFwVersion           = 350,
-    ReqWifiScanGetApRecord               = 351,
-    ReqMax                               = 352,
+    ReqGetCoprocessorFwVersion = 350,
+    ReqWifiScanGetApRecord = 351,
+    ReqMax = 352,
 
-    RespBase                             = 512,
-    RespGetMacAddress                    = 513,
-    RespSetMacAddress                    = 514,
-    RespGetWifiMode                      = 515,
-    RespSetWifiMode                      = 516,
+    RespBase = 512,
+    RespGetMacAddress = 513,
+    RespSetMacAddress = 514,
+    RespGetWifiMode = 515,
+    RespSetWifiMode = 516,
 
-    RespWifiSetPs                        = 526,
-    RespWifiGetPs                        = 527,
+    RespWifiSetPs = 526,
+    RespWifiGetPs = 527,
 
-    RespOtaBegin                         = 528,
-    RespOtaWrite                         = 529,
-    RespOtaEnd                           = 530,
+    RespOtaBegin = 528,
+    RespOtaWrite = 529,
+    RespOtaEnd = 530,
 
-    RespWifiSetMaxTxPower                = 531,
-    RespWifiGetMaxTxPower                = 532,
+    RespWifiSetMaxTxPower = 531,
+    RespWifiGetMaxTxPower = 532,
 
-    RespConfigHeartbeat                  = 533,
+    RespConfigHeartbeat = 533,
 
-    RespWifiInit                         = 534,
-    RespWifiDeinit                       = 535,
-    RespWifiStart                        = 536,
-    RespWifiStop                         = 537,
-    RespWifiConnect                      = 538,
-    RespWifiDisconnect                   = 539,
-    RespWifiSetConfig                    = 540,
-    RespWifiGetConfig                    = 541,
+    RespWifiInit = 534,
+    RespWifiDeinit = 535,
+    RespWifiStart = 536,
+    RespWifiStop = 537,
+    RespWifiConnect = 538,
+    RespWifiDisconnect = 539,
+    RespWifiSetConfig = 540,
+    RespWifiGetConfig = 541,
 
-    RespWifiScanStart                    = 542,
-    RespWifiScanStop                     = 543,
-    RespWifiScanGetApNum                 = 544,
-    RespWifiScanGetApRecords             = 545,
-    RespWifiClearApList                  = 546,
+    RespWifiScanStart = 542,
+    RespWifiScanStop = 543,
+    RespWifiScanGetApNum = 544,
+    RespWifiScanGetApRecords = 545,
+    RespWifiClearApList = 546,
 
-    RespWifiRestore                      = 547,
-    RespWifiClearFastConnect             = 548,
-    RespWifiDeauthSta                    = 549,
-    RespWifiStaGetApInfo                 = 550,
+    RespWifiRestore = 547,
+    RespWifiClearFastConnect = 548,
+    RespWifiDeauthSta = 549,
+    RespWifiStaGetApInfo = 550,
 
-    RespWifiSetProtocol                  = 553,
-    RespWifiGetProtocol                  = 554,
-    RespWifiSetBandwidth                 = 555,
-    RespWifiGetBandwidth                 = 556,
-    RespWifiSetChannel                   = 557,
-    RespWifiGetChannel                   = 558,
-    RespWifiSetCountry                   = 559,
-    RespWifiGetCountry                   = 560,
+    RespWifiSetProtocol = 553,
+    RespWifiGetProtocol = 554,
+    RespWifiSetBandwidth = 555,
+    RespWifiGetBandwidth = 556,
+    RespWifiSetChannel = 557,
+    RespWifiGetChannel = 558,
+    RespWifiSetCountry = 559,
+    RespWifiGetCountry = 560,
 
-    RespWifiSetPromiscuous               = 561,
-    RespWifiGetPromiscuous               = 562,
-    RespWifiSetPromiscuousFilter         = 563,
-    RespWifiGetPromiscuousFilter         = 564,
-    RespWifiSetPromiscuousCtrlFilter     = 565,
-    RespWifiGetPromiscuousCtrlFilter     = 566,
+    RespWifiSetPromiscuous = 561,
+    RespWifiGetPromiscuous = 562,
+    RespWifiSetPromiscuousFilter = 563,
+    RespWifiGetPromiscuousFilter = 564,
+    RespWifiSetPromiscuousCtrlFilter = 565,
+    RespWifiGetPromiscuousCtrlFilter = 566,
 
-    RespWifiApGetStaList                 = 567,
-    RespWifiApGetStaAid                  = 568,
-    RespWifiSetStorage                   = 569,
-    RespWifiSetVendorIe                  = 570,
-    RespWifiSetEventMask                 = 571,
-    RespWifiGetEventMask                 = 572,
-    RespWifi80211Tx                      = 573,
+    RespWifiApGetStaList = 567,
+    RespWifiApGetStaAid = 568,
+    RespWifiSetStorage = 569,
+    RespWifiSetVendorIe = 570,
+    RespWifiSetEventMask = 571,
+    RespWifiGetEventMask = 572,
+    RespWifi80211Tx = 573,
 
-    RespWifiSetCsiConfig                 = 574,
-    RespWifiSetCsi                       = 575,
+    RespWifiSetCsiConfig = 574,
+    RespWifiSetCsi = 575,
 
-    RespWifiSetAntGpio                   = 576,
-    RespWifiGetAntGpio                   = 577,
-    RespWifiSetAnt                       = 578,
-    RespWifiGetAnt                       = 579,
+    RespWifiSetAntGpio = 576,
+    RespWifiGetAntGpio = 577,
+    RespWifiSetAnt = 578,
+    RespWifiGetAnt = 579,
 
-    RespWifiGetTsfTime                   = 580,
-    RespWifiSetInactiveTime              = 581,
-    RespWifiGetInactiveTime              = 582,
-    RespWifiStatisDump                   = 583,
-    RespWifiSetRssiThreshold             = 584,
+    RespWifiGetTsfTime = 580,
+    RespWifiSetInactiveTime = 581,
+    RespWifiGetInactiveTime = 582,
+    RespWifiStatisDump = 583,
+    RespWifiSetRssiThreshold = 584,
 
-    RespWifiFtmInitiateSession           = 585,
-    RespWifiFtmEndSession                = 586,
-    RespWifiFtmRespSetOffset             = 587,
+    RespWifiFtmInitiateSession = 585,
+    RespWifiFtmEndSession = 586,
+    RespWifiFtmRespSetOffset = 587,
 
-    RespWifiConfig11bRate                = 588,
+    RespWifiConfig11bRate = 588,
     RespWifiConnectionlessModuleSetWakeInterval = 589,
-    RespWifiSetCountryCode               = 590,
-    RespWifiGetCountryCode               = 591,
-    RespWifiConfig80211TxRate            = 592,
-    RespWifiDisablePmfConfig             = 593,
-    RespWifiStaGetAid                    = 594,
-    RespWifiStaGetNegotiatedPhymode      = 595,
-    RespWifiSetDynamicCs                 = 596,
-    RespWifiStaGetRssi                   = 597,
+    RespWifiSetCountryCode = 590,
+    RespWifiGetCountryCode = 591,
+    RespWifiConfig80211TxRate = 592,
+    RespWifiDisablePmfConfig = 593,
+    RespWifiStaGetAid = 594,
+    RespWifiStaGetNegotiatedPhymode = 595,
+    RespWifiSetDynamicCs = 596,
+    RespWifiStaGetRssi = 597,
 
-    RespWifiSetProtocols                 = 598,
-    RespWifiGetProtocols                 = 599,
-    RespWifiSetBandwidths                = 600,
-    RespWifiGetBandwidths                = 601,
-    RespWifiSetBand                      = 602,
-    RespWifiGetBand                      = 603,
-    RespWifiSetBandMode                  = 604,
-    RespWifiGetBandMode                  = 605,
+    RespWifiSetProtocols = 598,
+    RespWifiGetProtocols = 599,
+    RespWifiSetBandwidths = 600,
+    RespWifiGetBandwidths = 601,
+    RespWifiSetBand = 602,
+    RespWifiGetBand = 603,
+    RespWifiSetBandMode = 604,
+    RespWifiGetBandMode = 605,
 
-    RespGetCoprocessorFwVersion          = 606,
-    RespWifiScanGetApRecord              = 607,
-    RespMax                              = 608,
+    RespGetCoprocessorFwVersion = 606,
+    RespWifiScanGetApRecord = 607,
+    RespMax = 608,
 
-    EventBase                            = 768,
-    EventEspInit                         = 769,
-    EventHeartbeat                       = 770,
-    EventApStaConnected                  = 771,
-    EventApStaDisconnected               = 772,
-    EventWifiEventNoArgs                 = 773,
-    EventStaScanDone                     = 774,
-    EventStaConnected                    = 775,
-    EventStaDisconnected                 = 776,
-    EventMax                             = 777,
+    EventBase = 768,
+    EventEspInit = 769,
+    EventHeartbeat = 770,
+    EventApStaConnected = 771,
+    EventApStaDisconnected = 772,
+    EventWifiEventNoArgs = 773,
+    EventStaScanDone = 774,
+    EventStaConnected = 775,
+    EventStaDisconnected = 776,
+    EventMax = 777,
 }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
-pub(crate) enum PacketTypeHci{
+pub(crate) enum PacketTypeHci {
     A = 0,
     B = 1, // todo
 }
@@ -302,7 +305,7 @@ pub(crate) enum PacketTypeHci{
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 /// Private
-pub(crate) enum PacketTypePriv{
+pub(crate) enum PacketTypePriv {
     A = 0,
     B = 1, // todo
 }
@@ -312,7 +315,6 @@ pub(crate) enum PacketType {
     // todo??
     Hci(PacketTypeHci),
     Priv(PacketTypePriv),
-
     // /* data-path kinds — rarely used on the control UART */
     // WifiData = 0x00, // 802.3 / 802.11 data via netif
     // // BtHci      = 0x01,  // HCI ACL / EVT
@@ -345,16 +347,17 @@ impl PacketType {
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 /// Interface type. See ESP-Hosted-MCU readme, section 7.2
+/// /// [official enum](https://github.com/espressif/esp-hosted-mcu/blob/634e51233af2f8124dfa8118747f97f8615ea4a6/common/esp_hosted_interface.h)
 pub(crate) enum IfType {
     Invalid = 0,
-    Stat = 1,
+    Sta = 1,
     Ap = 2,
     Serial = 3,
     Hci = 4,
     Priv = 5,
     Test = 6,
     Eth = 7,
-    Max = 8
+    Max = 8,
 }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
@@ -405,14 +408,14 @@ pub(crate) fn slip_encode(src: &[u8], out: &mut [u8]) -> usize {
 /// Adapted from `esp-hosted-mcu/common/esp_hosted_header.h`
 /// This is at the start of the message, and is followed by the RPC header.
 /// See ESP-hosted-MCU readme, section 7.1.
-///
 struct PayloadHeader {
     /// Interface type
     pub if_type: IfType, // 2 4-bit values
     /// Interface number
-    pub if_num: u8,      // 2 4-bit values
+    pub if_num: u8, // 2 4-bit values
     pub flags: u8,
     /// Payload length
+    /// "Payload starts the next byte after header->offset"
     pub len: u16,
     /// Offset to payload
     pub offset: u16,
@@ -430,11 +433,13 @@ struct PayloadHeader {
 
 impl PayloadHeader {
     pub fn new(if_type: IfType, pkt_type: PacketType, payload_len: usize) -> Self {
+        // Len is the number of bytes following the header. (all)
+        let len = (TLV_HEADER_SIZE + EndpointValue::CtrlReq.endpoint_length() as usize + payload_len) as u16;
         Self {
             if_type,
             if_num: 0,
             flags: 0,
-            len: (TLV_HEADER_SIZE + payload_len + CRC_LEN) as u16,
+            len,
             offset: 0,
             // Computed after the entire frame is constructed. Must be set to 0 for
             // now, as this goes into the checksum calculation.
@@ -494,25 +499,52 @@ impl PayloadHeader {
     }
 }
 
-
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive, Default)]
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 /// Type-length-value header. See host/drivers/virtual_serial_if/serial_if.c
-pub(crate) enum TlvType {
-    #[default]
+pub(crate) enum EndpointType {
+    /// PROTO_PSER_TLV_T_EPNAME
     EndpointName = 0x01,
+    /// PROTO_PSER_TLV_T_DATA
     Data = 0x02,
 }
 
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
+#[repr(u8)]
 /// Type-length-value header. See host/drivers/virtual_serial_if/serial_if.c
-struct TlvHeader {
-    pub endpoint_type: TlvType,
-    pub endpoint_length: u16,
-    // pub endpoint_value: &[u8], // endpoint length
-    pub data_type: TlvType,
-    pub data_length: u16,
-    // pub data_value: &[u8], // data length
+pub(crate) enum EndpointValue {
+    CtrlReq,
+    CtrlResp,
+    CtrlEvent,
 }
+
+impl EndpointValue {
+    pub fn to_bytes(&self, buf: &mut [u8]) {
+        let slice: &[u8] = match self {
+            Self::CtrlReq   => b"CTRL_REQ",
+            Self::CtrlResp  => b"CTRL_RESP",
+            Self::CtrlEvent => b"CTRL_EVENT",
+        };
+        buf[0..slice.len()].copy_from_slice(slice);
+    }
+
+    pub fn endpoint_length(&self) -> u16 {
+        match self {
+            Self::CtrlReq => 8,
+            Self::CtrlResp => 9,
+            Self::CtrlEvent => 10,
+        }
+    }
+}
+
+// /// Type-length-value header. See host/drivers/virtual_serial_if/serial_if.c
+// struct TlvHeader {
+//     // pub endpoint_type: TlvType,
+//     pub endpoint_length: u16,
+//     pub endpoint_value: EndpointValue,
+//     pub data_length: u16,
+//     // pub data_value: &[u8], // data length
+// }
 
 /// Frame structure:
 /// Bytes 0..12: Payload header.
@@ -520,48 +552,48 @@ struct TlvHeader {
 /// Bytes 18..18 + payload len: Payload
 /// Trailing 2 bytes: CRC (frame; different from the payload header CRC)
 // pub(crate) fn build_frame(out: &mut [u8], rpc_mod: Module, rpc_cmd: Command, payload: &[u8]) {
-pub(crate) fn build_frame(out: &mut [u8], endpoint_type: TlvType, data_type: TlvType, endpoint: &[u8], payload: &[u8]) {
+pub(crate) fn build_frame(
+    out: &mut [u8],
+    // endpoint_type: EndpointType,
+    // data_type: EndpointType,
+    // endpoint: &[u8],
+    // todo: A message type here likely.
+    payload: &[u8],
+) {
     let payload_len = payload.len();
 
     // todo: Should the payload header include the TLV header in the len?
-    let payload_header = PayloadHeader::new(IfType::Priv, PacketType::Priv(PacketTypePriv::A), payload_len);
+    let payload_header = PayloadHeader::new(
+        IfType::Priv,
+        PacketType::Priv(PacketTypePriv::A),
+        payload_len,
+    );
     out[..PL_HEADER_SIZE].copy_from_slice(&payload_header.to_bytes());
 
-    let tlv = TlvHeader {
-        endpoint_type,
-        endpoint_length: endpoint.len() as u16,
-        data_type,
-        data_length: payload_len as u16,
-    };
-
     let mut i = PL_HEADER_SIZE;
-    out[i] = tlv.endpoint_type as u8;
+    out[i] = EndpointType::EndpointName as u8;
     i += 1;
 
-    copy_le!(out, tlv.endpoint_length, i..i + 2);
+    let endpoint_length = EndpointValue::CtrlReq.endpoint_length() as u8;
+    copy_le!(out, endpoint_length, i..i + 2);
     i += 2;
 
-    let endpoint_value = [0]; // todo??
-    out[i..i + tlv.endpoint_length as usize].copy_from_slice(&endpoint_value);
-    i += tlv.endpoint_length as usize;
+    let endpoint_value = EndpointValue::CtrlReq; // Hard-coded for transmission?
+    endpoint_value.to_bytes(&mut out[i..i + endpoint_length as usize]);
+    i += endpoint_length as usize;
 
-    out[i] = tlv.data_type as u8;
+    out[i] = EndpointType::Data as u8;
     i += 1;
 
-    copy_le!(out, tlv.data_length, i..i + 2);
+    copy_le!(out, payload_len as u16, i..i + 2);
     i += 2;
 
-    out[i..i + tlv.data_length as usize].copy_from_slice(payload);
-
-    // out[PL_HEADER_SIZE..PL_HEADER_SIZE + TLV_HEADER_SIZE].copy_from_slice(&tlv_header.to_bytes());
-
-    // todo + endpoint_value len?? What is endpoint_value?
-    let pl_end = PL_HEADER_SIZE + TLV_HEADER_SIZE + payload_len;
-    out[PL_HEADER_SIZE + TLV_HEADER_SIZE..pl_end].copy_from_slice(payload);
+    out[i..i + payload_len].copy_from_slice(payload);
+    i += payload_len;
 
     // system_design...: "**Checksum Coverage**: The checksum covers the **entire frame** including:
     // 1. Complete `esp_payload_header` (with checksum field set to 0 during calculation)
     // 2. Complete payload data"
-    let pl_checksum = compute_checksum(&out[..pl_end]);
+    let pl_checksum = compute_checksum(&out[..i]);
     copy_le!(out, pl_checksum, 6..8);
 }

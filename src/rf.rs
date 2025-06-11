@@ -2,14 +2,12 @@
 
 use heapless::{String, Vec};
 
+use crate::{
+    CRC_LEN, EspError, Module, TLV_HEADER_SIZE, build_frame, protocol::EndpointType,
+    transport::compute_checksum,
+};
 #[cfg(feature = "hal")]
 use crate::{Uart, UartError};
-
-use crate::{
-    CRC_LEN, EspError, Module, TLV_HEADER_SIZE, build_frame,
-};
-use crate::protocol::TlvType;
-use crate::transport::compute_checksum;
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -40,7 +38,7 @@ pub fn get_aps(
     // build_frame(&mut tx, Module::Wifi, Command::WifiScanStart, &[]);
 
     let endpoint = [0]; // todo temp??
-    build_frame(&mut tx, TlvType::Data, TlvType::Data, &endpoint, &[]);
+    build_frame(&mut tx, EndpointType::Data, EndpointType::Data, &endpoint, &[]);
     uart.write(&tx)?;
 
     // 2 → collect results

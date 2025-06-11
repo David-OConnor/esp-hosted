@@ -13,7 +13,6 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use crc_any::{CRCu8, CRCu16};
 use defmt::println;
-
 #[cfg(feature = "hal")]
 use hal::{
     pac::{SPI2, USART1, USART2},
@@ -33,7 +32,9 @@ macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
 
-use crate::protocol::{CRC_LEN,  Module, PL_HEADER_SIZE, TLV_HEADER_SIZE,  build_frame, slip_encode, TlvType};
+use crate::protocol::{
+    CRC_LEN, Module, PL_HEADER_SIZE, TLV_HEADER_SIZE, EndpointType, build_frame, slip_encode,
+};
 
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
@@ -75,7 +76,7 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     let mut frame_buf = [0u8; PING_FRAME_LEN];
 
     let endpoint = [0]; // todo temp??
-    build_frame(&mut frame_buf, TlvType::Data, TlvType::Data, &endpoint, &[]);
+    build_frame(&mut frame_buf, EndpointType::Data, EndpointType::Data, &endpoint, &[]);
     // build_frame(&mut frame_buf, Module::Ctrl, Command::PingReq, &[]);
 
     let frame_len = PL_HEADER_SIZE + TLV_HEADER_SIZE + 0 + CRC_LEN;

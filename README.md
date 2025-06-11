@@ -1,3 +1,4 @@
 # ESP Hosted
-For connecting to an [ESP-Hosted-MCU](https://github.com/espressif/esp-hosted-mcu) RF MCU from an STM-32. 
-Compatible with ESP-IDF 5.4. (And which others?)
+For connecting to an [ESP-Hosted-MCU](https://github.com/espressif/esp-hosted-mcu) from a Host MCU with firmware written in rust.
+
+Compatible with ESP-Hosted-MCU 2.0.6.
