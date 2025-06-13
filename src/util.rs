@@ -6,11 +6,11 @@ pub(crate) fn encode_varint(mut v: u64, out: &mut [u8]) -> usize {
         let byte = (v & 0x7F) as u8;
         v >>= 7;
         if v == 0 {
-            out[idx] = byte;                   // last byte – high bit clear
+            out[idx] = byte; // last byte – high bit clear
             idx += 1;
             break;
         } else {
-            out[idx] = byte | 0x80;            // more bytes follow
+            out[idx] = byte | 0x80; // more bytes follow
             idx += 1;
         }
     }

@@ -6,11 +6,14 @@
 
 mod protocol;
 mod rf;
+mod rpc;
 mod transport;
 mod util;
 // mod misc;
 
-use core::sync::atomic::{AtomicBool, Ordering};
+pub enum DataError {
+    Invalid,
+}
 
 use defmt::println;
 #[cfg(feature = "hal")]
@@ -32,8 +35,12 @@ macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
 
-use crate::protocol::{Module, build_frame, HEADER_SIZE, RpcId, CRC_SIZE, RpcHeader, RPC_HEADER_MAX_SIZE};
-use crate::transport::compute_checksum;
+use crate::{
+    protocol::{CRC_SIZE, HEADER_SIZE, Module, RPC_HEADER_MAX_SIZE,build_frame},
+    rpc::WireType,
+    transport::compute_checksum,
+};
+use crate::rpc::{make_tag, setup_rpc, RpcHeader, RpcId};
 
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
@@ -70,43 +77,21 @@ impl From<UartError> for EspError {
 #[cfg(feature = "hal")]
 /// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
 pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
-    const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 9 + CRC_SIZE;
-
+    const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 7; // todo?
     let mut frame_buf = [0; FRAME_LEN];
 
-    let iface_num = 0;  // 0 = STA, 1 = AP
+    let iface_num = 0; // todo: or 1?
+    let data = [iface_num];
 
-    // todo: Put this in a build-RPC fn, or build it into build_frame.
-    let rpc_header = RpcHeader {
+    let rpc_hdr = RpcHeader {
         id: RpcId::ReqWifiApGetStaList,
         len: 1, // Payload len of 1: Interface number.
     };
 
-    let mut payload = [0; 9];
+    let frame_len = setup_rpc(&mut frame_buf, &rpc_hdr, &data);
+    println!("Total frame size sent: {:?}", frame_len);
 
-    // todo: Is it always 5? If so, use RPC_HEADER_SIZE = 5.
-    let rpc_header_size = rpc_header.to_bytes(&mut payload);
-    let mut i =  rpc_header_size;
-    println!("RPC HEADER SIZE: {:?}", rpc_header_size);
-
-    // field #2, wire-type=2 ?
-    // copy_le!(payload, 12_u16, i..i + 2);
-    // todo: Look up where this comes from.
-    payload[i] = 0x12;  // Tag byte.
-    i += 1;
-
-    // This is a variant.
-    payload[i] = 1; // Body length in bytes?
-    i += 1;
-
-    payload[i] = iface_num;
-    i += 1;
-
-    build_frame(&mut frame_buf, &payload);
-
-    // todo: Do we copy the payload checksum at bytes 6..8 to the end of the buffer?
-
-    uart.write(&frame_buf)?;
+    uart.write(&frame_buf[..frame_len])?;
 
     // todo: Experimenting with slip_buf. wrap this in a helper if required.
     // let mut slip_buf = [0u8; 2 * PING_FRAME_LEN + 2]; // worst-case expansion
@@ -123,10 +108,6 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
 
     println!("Header buf read: {:?}", hdr);
 
-    // if hdr[0] != MAGIC || hdr[1] != VERSION {
-    //     println!("ESP Unexpected magic or version"); // todo temp
-    //     return Err(EspError::UnexpectedResponse(hdr[0]));
-    // }
     let len = u16::from_le_bytes([hdr[2], hdr[3]]) as usize;
 
     return Ok(());

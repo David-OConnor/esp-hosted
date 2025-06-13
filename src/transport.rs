@@ -36,6 +36,18 @@ pub(crate) enum ESP_PRIV_EVENT_TYPE {
     ESP_PRIV_EVENT_INIT = 0x22,
 }
 
+#[derive(Clone, Copy, PartialEq, Default, TryFromPrimitive)]
+#[repr(u8)]
+pub(crate) enum PacketType {
+    #[default]
+    None = 0, // todo: QC this!
+    /// It appears that this is only used from the Slave
+    ESP_PACKET_TYPE_EVENT = 0x33,
+    /// It appears that this is always the type sent by the host.
+    ESP_PRIV_EVENT_INIT = 0x22,
+}
+
+
 #[repr(u8)]
 pub(crate) enum SLAVE_CONFIG_PRIV_TAG_TYPE {
     HOST_CAPABILITIES = 0x44,
@@ -58,8 +70,6 @@ pub(crate) struct esp_priv_event {
 
 /// `System_design_with_rps_as_focus.md`, section 3.3: Checksum Calculation
 pub(crate) fn compute_checksum(buf: &[u8]) -> u16 {
-    // buf.iter().fold(0, |acc, &b| acc.wrapping_add(b as _))
-
     let mut checksum = 0;
     let mut i = 0;
 
