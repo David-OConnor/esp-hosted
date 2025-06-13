@@ -15,13 +15,13 @@ use crate::transport::PacketType;
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
 
 // The 6 static bytes in the TLV header: endpoint type (1), endpoint length (2), data type (1),
-// data length (2). Doesn't include the endpoint value, which is 8-10 (?)
+// data length (2).
 const TLV_HEADER_SIZE: usize = 6;
-// RPC_EP_NAME_EVT is the same size.
+// RPC_EP_NAME_EVT is the same size as `RPC_EP_NAME_RESP`.
 pub(crate) const TLV_SIZE: usize = TLV_HEADER_SIZE + RPC_EP_NAME_RSP.len();
 
-// Worst-case size:  tag(1) + 3-byte varint + tag(1) + 3-byte varint = 8
-pub(crate) const RPC_HEADER_MAX_SIZE: usize = 8;
+// Worst-case size:  tag(1) + 2-byte varint + tag(1) + 3-byte varint = 7
+pub(crate) const RPC_HEADER_MAX_SIZE: usize = 7;
 
 pub(crate) const CRC_SIZE: usize = 2; // todo: Determine if you need this; for trailing CRC.
 

@@ -4,7 +4,7 @@
 use defmt::{println, Format};
 use num_enum::TryFromPrimitive;
 use crate::{copy_le, DataError};
-use crate::protocol::{build_frame, RPC_HEADER_MAX_SIZE};
+use crate::protocol::{build_frame, HEADER_SIZE, RPC_HEADER_MAX_SIZE};
 use crate::transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP};
 use crate::util::{decode_varint, encode_varint};
 
@@ -41,11 +41,13 @@ impl RpcHeader {
         // Field 1: id
         buf[i] = make_tag(1, WireType::Basic);
         i += 1;
+
         i += encode_varint(self.id as u64, &mut buf[i..]);
 
         // Field 2: payload_len
         buf[i] = make_tag(2, WireType::Basic);
         i += 1;
+
         i += encode_varint(self.len as u64, &mut buf[i..]);
 
         i
@@ -138,7 +140,7 @@ pub(crate) enum RpcType {
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u16)]
-/// See `esp_hosted_rpc.proto`, enum by this name.
+/// See `esp_hosted_rpc.proto`, enum by this name. This is encoded as a varint.
 pub(crate) enum RpcId {
     MsgIdInvalid = 0,
     ReqBase = 256,
@@ -394,37 +396,39 @@ impl RpcEndpoint {
 }
 
 
-/// Call this function to set up an RPC command. This makes calls to set up payload header and TLV.
-/// returns the total payload size after setup. (Including PL header, TLV, RPC)
+/// Sets up an RPC command. This makes calls to set up payload header and TLV.
+/// returns the total payload size after setup. (Including PL header, TLV, RPC).
 pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
-    // We must allocate this buffer as fixed size; 9 will do for here.
+    let mut rpc_buf = &mut frame[HEADER_SIZE..];
+    let data_len = data.len();
 
-    let mut hdr_buf = [0u8; RPC_HEADER_MAX_SIZE];
-    let hdr_len = rpc_hdr.to_bytes(&mut hdr_buf);
+    // We use a separate buffer for the RPC header, since we must encode its size
+    // prior to its contents, but its size comes about after we learn its contents.
+    let mut rpc_hdr_buf = [0; RPC_HEADER_MAX_SIZE];
 
-    let mut payload = [0; RPC_HEADER_MAX_SIZE + 5];
+    let hdr_len = rpc_hdr.to_bytes(&mut rpc_hdr_buf);
+
+    // This `i` is relative to the RPC section, after the payload header.
     let mut i = 0;
 
+    // todo: What should these Wire Types be??
 
-    payload[i] = make_tag(1, WireType::LenDetermined);
+    // RPC header len, and its tag.
+    rpc_buf[i] = make_tag(1, WireType::Basic);
     i += 1;
-    i += encode_varint(hdr_len as u64, &mut payload[i..]);
-    payload[i..i + hdr_len].copy_from_slice(&hdr_buf[..hdr_len]);
+    i += encode_varint(hdr_len as u64, &mut rpc_buf[i..]);
+
+    // RPC header
+    rpc_buf[i..i + hdr_len].copy_from_slice(&rpc_hdr_buf[..hdr_len]);
     i += hdr_len;
 
-    payload[i] = make_tag(2, WireType::LenDetermined);
+    // Data Len, and its tag.
+    rpc_buf[i] = make_tag(2, WireType::Basic);
     i += 1;
-    i += encode_varint(data.len() as u64, &mut payload[i..]);
-    payload[i..i + data.len()].copy_from_slice(data);
-    i += data.len();
+    i += encode_varint(data_len as u64, &mut rpc_buf[i..]);
 
-    let frame_size = build_frame(frame, &payload[..i]);
+    rpc_buf[i..i + data_len].copy_from_slice(data);
+    i += data_len;
 
-    // todo: Do we add a trailing checksum? ChatGPT thinks so half the time, but I can't find
-    // todo evidence anywhere for it.
-    let checksum_trail = 0;
-    // copy_le!(frame, checksum_trail, i..i+2);
-    // i += 2;
-
-    frame_size
+    build_frame(frame, &rpc_buf[..i])
 }

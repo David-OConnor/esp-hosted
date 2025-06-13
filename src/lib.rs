@@ -77,7 +77,7 @@ impl From<UartError> for EspError {
 #[cfg(feature = "hal")]
 /// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
 pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
-    const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 7; // todo?
+    const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 7;
     let mut frame_buf = [0; FRAME_LEN];
 
     let iface_num = 0; // todo: or 1?

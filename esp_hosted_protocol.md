@@ -28,7 +28,49 @@ The TLV (type, length, value) header further describes _endpoint_ and length dat
 - **13, 14:** Length of the endpoint name below. `u16.` **Always [6, 0]**.
 - **15 - 20** Endpoint name. Hosts always writes."RPCRsp" as ASCII bytes. Slave may write that, or "RPCEvt".
 - **21:** `u8.` Always `2` to indicate the following bytes are data.
-- **22, 23:** Payload len: `u16`. This is the length, in bytes, of all remaining data.
+- **22, 23:** Payload len: `u16`. This is the length, in bytes, of all remaining data after this TLV header. (Bytes 24-)
+
+
+### Remaining bytes: RPC data
+The remaining data is specific to the request or response type, and is structured according to the RPC protocol.
+It uses variable-length integers (_varints_), so we will no longer use fixed indices to describe structure. The data is organized
+as follows, with no spacing between items. 
+
+The `Tag` type is used several types. It's a `u8`-encoded enum of two values: (field <<3) | (wire_type as u8). 
+Field is a `u8`starting at 1. Wire type is an enum as follows:
+
+```rust
+ enum WireType {
+    /// 0: int32, uint32, bool, enum, variant
+    Basic = 0,
+    /// 64-bit fixed
+    SixtyFourBit = 1,
+    /// Len-determined (string, bytes, sub-message)
+    LenDetermined = 2,
+    /// 32-bit fixed (fixed32, float)
+    Fixed32Bit = 5,
+}
+```
+
+[//]: # ( todo: QC these wire types)
+
+The frame layout, starting at byte 24:
+### RPC header len
+- **RPC header len tag** `Tag`. **Always `0x08`**. (Field = 1, wire type = 0).
+- **RPC header len**: `variant` of the total size of the RPC header. (Generally 5-7 for Esp-Hosted-MCU)
+
+#### RPC header
+- **RPC tag**: `Tag` (for Rpc ID). **Always `0x08`**. (Field = 1, wire type = 0).
+- **Rpc ID.** A **varint-encoded enum, always len 2** that describes the operation performed. For example, if this is requesting to set a power level,
+configure something, data in regards to a request etc. These are currently all 2 bits long for ESP-Hosted-MCU
+operations.
+- **Payload len tag**: `Tag`. **Always `0x10`**. (Field = 2, wire type = 0).
+- **Payload len**: Variant of the payload following this. The payload is in a format determined by Rpd ID.
+
+### RPC data
+- **Data len tag** `Tag`. **Always `0x08`**. (Field = 1, wire type = 0).
+- **Data len**: `variant` of the total size of the data
+- **Data** Makes up the rest of the message; specific to RPC type.
 
 
 ## Checksum computation
