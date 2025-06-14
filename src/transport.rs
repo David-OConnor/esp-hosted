@@ -47,7 +47,6 @@ pub(crate) enum PacketType {
     ESP_PRIV_EVENT_INIT = 0x22,
 }
 
-
 #[repr(u8)]
 pub(crate) enum SLAVE_CONFIG_PRIV_TAG_TYPE {
     HOST_CAPABILITIES = 0x44,
@@ -57,10 +56,10 @@ pub(crate) enum SLAVE_CONFIG_PRIV_TAG_TYPE {
     SLV_CONFIG_THROTTLE_LOW_THRESHOLD,
 }
 
-const ESP_TRANSPORT_SDIO_MAX_BUF_SIZE: u16 = 1536;
-const ESP_TRANSPORT_SPI_MAX_BUF_SIZE: u16 = 1600;
-const ESP_TRANSPORT_SPI_HD_MAX_BUF_SIZE: u16 = 1600;
-const ESP_TRANSPORT_UART_MAX_BUF_SIZE: u16 = 1600;
+pub(crate) const ESP_TRANSPORT_SDIO_MAX_BUF_SIZE: u16 = 1536;
+pub(crate) const ESP_TRANSPORT_SPI_MAX_BUF_SIZE: u16 = 1600;
+pub(crate) const ESP_TRANSPORT_SPI_HD_MAX_BUF_SIZE: u16 = 1600;
+pub(crate) const ESP_TRANSPORT_UART_MAX_BUF_SIZE: u16 = 1600;
 
 pub(crate) struct esp_priv_event {
     event_type: u8,

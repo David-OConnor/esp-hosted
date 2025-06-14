@@ -59,7 +59,7 @@ The frame layout, starting at byte 24:
 - **RPC header len tag** `Tag`. **Always `0x08`**. (Field = 1, wire type = 0).
 - **RPC header len**: `variant` of the total size of the RPC header. (Generally 5-7 for Esp-Hosted-MCU)
 
-#### RPC header
+### RPC header
 - **RPC tag**: `Tag` (for Rpc ID). **Always `0x08`**. (Field = 1, wire type = 0).
 - **Rpc ID.** A **varint-encoded enum, always len 2** that describes the operation performed. For example, if this is requesting to set a power level,
 configure something, data in regards to a request etc. These are currently all 2 bits long for ESP-Hosted-MCU
@@ -86,5 +86,78 @@ fn compute_checksum(buf: &[u8]) -> u16 {
     }
 
     checksum
+}
+```
+
+
+## Example composing a simple frame
+We will demonstrate sending a frame that requests a list of Wi-Fi Access points. The full frame we send, 34-bytes long:
+
+[//]: # (`[3, 0, 22, 0, 12, 0, 66, 3, 0, 0, 0, 0, 1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 10, 0, 8, 5, 8, 183, 2, 16, 1, 16, 1, 0]`)
+`[3, 0, 18, 0, 12, 0, 30, 3, 0, 0, 0, 0, 1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 6, 0, 8, 183, 2, 18, 1, 0]`
+
+Break down:
+
+### Payload header
+Other than payload length, this is generic, and will be similar for all messages you send and receive.
+
+`[3, 0, 22, 0, 12, 0, 66, 3, 0, 0, 0, 0]`
+- 
+- **3:** Interface type = 3 (Serial). Interface number = 0.
+- **0:** No flags
+- **22, 0:** Payload len, following this header, of 22. (12 + 22 = 34 byte frame size)
+- **12, 0:** Payload header size = 12 for offset
+- **30, 3** Checksum
+- **0, 0**: Sequence number 0. (You may wish to increment this each message you send)
+- **0, 0**: Throttle 0, and no relevant packet type.
+
+
+### TLV header
+Other than RPC length, this is generic.
+
+[//]: # (`[1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 10, 0]`)
+`[1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 6, 0]`
+
+- **1:** Always
+- **6, 0:** Always
+- **82, 80, 67, 82, 115, 112**: b"RPCRsp"
+- **2:** Always
+[//]: # (**10, 0** 10 bytes remain in the frame, following this TLV header.)
+- **6, 0** 6 bytes remain in the frame, following this TLV header.
+
+
+### RPC data
+This is the non-generic part of our message. In this example, requesting WiFi stations.
+
+[//]: # (`[8, 5, 8, 183, 2, 16, 1, 16, 1, 0]`)
+[//]: # (`[8, 183, 2, 18, 1, 0]`)
+`[8, 183, 2, 18, 1, 26, 1, 0]`
+
+todo: So, skip: 1: Header len + its tag.  2: Duplicate entry of data len + its tag
+
+[//]: # (**8:**: Tag; always this.)
+[//]: # (**5:**: RPC header len = 5, encoded as varint.)
+- **8:**: Tag; always this.
+- **183, 2**: RPC ID = 311, encoded as varint. (Part of RPC header)
+
+[//]: # (**18**: Tag for data len; always this.  &#40;Part of RPC header&#41;)
+[//]: # (**1**: Data len encoded as varint. &#40;Part of RPC header&#41;)
+
+- **18** Tag for data again; always this.
+- **1** Data len encoded as varint, again
+- **0** A RpcID-specific payload. In this case, it specifies the interface number.
+
+
+Hmm:
+```proto
+enum RpcType {
+MsgType_Invalid = 0;
+	Req = 1;
+	Resp = 2;
+	Event = 3;
+	MsgType_Max = 4;
+}
+
+message Rpc_Req_WifiApGetStaList {
 }
 ```

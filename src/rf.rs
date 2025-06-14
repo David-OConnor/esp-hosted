@@ -4,13 +4,13 @@ use heapless::{String, Vec};
 
 use crate::{
     EspError, Module, build_frame,
-    protocol::{HEADER_SIZE},
+    protocol::{HEADER_SIZE, RPC_HEADER_MAX_SIZE},
+    rpc::{RpcHeader, setup_rpc},
+    rpc_enums::RpcId,
     transport::compute_checksum,
 };
 #[cfg(feature = "hal")]
 use crate::{Uart, UartError};
-use crate::protocol::RPC_HEADER_MAX_SIZE;
-use crate::rpc::{setup_rpc, RpcHeader, RpcId};
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]

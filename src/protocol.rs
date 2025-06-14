@@ -7,10 +7,9 @@ use num_enum::TryFromPrimitive;
 
 use crate::{
     copy_le, parse_le,
-    transport::{RPC_EP_NAME_RSP, compute_checksum},
+    rpc::{EndpointType, RpcEndpoint},
+    transport::{PacketType, RPC_EP_NAME_RSP, compute_checksum},
 };
-use crate::rpc::{EndpointType, RpcEndpoint};
-use crate::transport::PacketType;
 
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
 
@@ -115,7 +114,6 @@ struct PayloadHeader {
 
     // From Esp doc: First 3 bits may be reserved. The remaining bits for HCI or
     // Private packet type?
-
     pub pkt_type: PacketType,
 }
 
@@ -190,14 +188,10 @@ impl PayloadHeader {
     }
 }
 
-
 /// Builds the entire frame sent and received over the wire protocol. See `esp_hosted_protocol.md`
 /// for details on how this is constructed.
 /// Outputs total bytes in the frame.
-pub(crate) fn build_frame(
-    out: &mut [u8],
-    payload: &[u8],
-) -> usize{
+pub(crate) fn build_frame(out: &mut [u8], payload: &[u8]) -> usize {
     // `payload` here is all remaining bytes, including RPC metadata.
     let payload_len = payload.len();
 

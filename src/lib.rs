@@ -7,6 +7,7 @@
 mod protocol;
 mod rf;
 mod rpc;
+mod rpc_enums;
 mod transport;
 mod util;
 // mod misc;
@@ -36,11 +37,11 @@ macro_rules! copy_le {
 }
 
 use crate::{
-    protocol::{CRC_SIZE, HEADER_SIZE, Module, RPC_HEADER_MAX_SIZE,build_frame},
-    rpc::WireType,
+    protocol::{CRC_SIZE, HEADER_SIZE, Module, RPC_HEADER_MAX_SIZE, build_frame},
+    rpc::{RpcHeader, WireType, make_tag, setup_rpc},
+    rpc_enums::RpcId,
     transport::compute_checksum,
 };
-use crate::rpc::{make_tag, setup_rpc, RpcHeader, RpcId};
 
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
@@ -98,7 +99,7 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     // let slip_len = slip_encode(&frame_buf[..frame_len], &mut slip_buf);
     // uart.write(&slip_buf[..slip_len])?;
 
-    println!("Writing status check frame: {:?}", &frame_buf);
+    println!("Writing status check frame: {:?}", &frame_buf[..frame_len]);
 
     // let mut hdr = [0; HEADER_SIZE];
     let mut hdr = [0; 12];
