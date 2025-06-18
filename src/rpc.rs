@@ -5,19 +5,18 @@ use defmt::{Format, println};
 use num_enum::TryFromPrimitive;
 
 use crate::{
-    DataError, copy_le,
-    protocol::{HEADER_SIZE, RPC_HEADER_MAX_SIZE, build_frame},
-    rpc_enums::{PayloadCase, RpcId},
+    protocol::build_frame,
+    rpc_enums::RpcId,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
-    util::{decode_varint, encode_varint},
+    util::encode_varint,
 };
-use crate::util::write_rpc_var;
 
 const MAX_RPC_SIZE: usize = 100; // todo temp.
 
 /// Used in a few places when setting up RPC.
-pub(crate) fn make_tag(field: u8, wire_type: WireType) -> u8 {
-    (field << 3) | (wire_type as u8)
+// pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u8 {
+pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u16 {
+    (field << 3) | (wire_type as u16)
 }
 
 // todo: Experimenting.
@@ -40,17 +39,51 @@ impl Rpc {
         }
     }
 
-    /// Returns the total size used.
-    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+    /// Writes the Rpc struct and data to buf. Returns the total size used.
+    pub fn to_bytes(&self, buf: &mut [u8], data: &[u8]) -> usize {
         let mut i = 0;
+        let data_len = data.len();
 
         // todo: Is this the right wire type? (All fields)
         write_rpc_var(buf, 1, WireType::Basic, self.msg_type as u64, &mut i);
         write_rpc_var(buf, 2, WireType::Basic, self.msg_id as u64, &mut i);
-        // write_rpc_var(buf, 3, WireType::Basic, self.uid as u64, &mut i);
-        write_rpc_var(buf, 3, WireType::LenDetermined, self.uid as u64, &mut i);
+        write_rpc_var(buf, 3, WireType::Basic, self.uid as u64, &mut i);
+
+        // We repeat the message id as the payload's tag field.
+        // Note: When using length-determined, we must follow the tag with a varint len.
+        write_rpc_var(
+            buf,
+            self.msg_id as u16,
+            WireType::LenDetermined,
+            data_len as u64,
+            &mut i,
+        );
+
+        buf[i..i + data_len].copy_from_slice(data);
+        i += data_len;
 
         i
+
+        // My attempt:
+
+        // Buf: `[8, 1, 16, 183, 2, 24, 0]`
+        // 8: Tag(Field 1, wire type: basic)
+        // 1: Message type request
+        // 16: Tag (Field 2, wire type: basic)
+        // 183, 2: Msg ID (RPC ID) 311: ReqWifiApGetStaList
+        // 24: Tag (Field 3, wire type: basic)
+        // 0: Uid = 0 (Can be anything)
+
+        // Here's what ChatGPT thinks:
+
+        // Buf: `[8, 1, 16, 183, 2, 24, 0, || 186, 19, 0]`
+        // 8: Tag(Field 1, wire type: basic)
+        // 1: Message type request
+        // 16: Tag (Field 2, wire type: basic)
+        // 183, 2: Msg ID (RPC ID) 311: ReqWifiApGetStaList
+        // 24: Tag (Field 3, wire type: basic)
+
+        // 186, 19, 0 // "empty message??"
     }
 }
 
@@ -66,71 +99,6 @@ pub enum WireType {
     LenDetermined = 2,
     /// 32-bit fixed (fixed32, float)
     Fixed32Bit = 5,
-}
-
-pub(crate) struct RpcHeader {
-    pub id: RpcId,
-    pub len: u16,
-}
-
-impl RpcHeader {
-    /// Encode as protobuf (wire-type 0) into `buf`.
-    /// Returns the number of bytes written.
-    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-        let mut i = 0;
-
-        // todo: experimenting...
-        //// -----------
-        let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
-        return i; // todo...
-
-        //----------
-
-        // Field 1: id
-        buf[i] = make_tag(1, WireType::Basic);
-        i += 1;
-
-        i += encode_varint(self.id as u64, &mut buf[i..]);
-
-        // todo: It appears we must skip this in at least some cases. Fixed-len only, or always?
-        // Field 2: payload_len
-        // buf[i] = make_tag(2, WireType::Basic);
-        // i += 1;
-        //
-        // i += encode_varint(self.len as u64, &mut buf[i..]);
-
-        i
-    }
-
-    /// Decode from `buf`, returning `(header, bytes_consumed)`.
-    pub fn from_bytes(buf: &[u8]) -> Result<(Self, usize), DataError> {
-        let mut i = 0;
-
-        if buf[i] != make_tag(1, WireType::Basic) {
-            return Err(DataError::Invalid);
-        }
-
-        i += 1;
-        let (id_val, n) = decode_varint(&buf[i..]);
-        i += n;
-
-        // if buf[i] != make_tag(2, WireType::Basic) {
-        if buf[i] != make_tag(2, WireType::LenDetermined) {
-            return Err(DataError::Invalid);
-        }
-
-        i += 1;
-        let (len_val, n) = decode_varint(&buf[i..]);
-        i += n;
-
-        Ok((
-            Self {
-                id: (id_val as u16).try_into().unwrap(),
-                len: len_val as u16,
-            },
-            i,
-        ))
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
@@ -223,73 +191,31 @@ impl RpcEndpoint {
 
 /// Sets up an RPC command. This makes calls to set up payload header and TLV.
 /// returns the total payload size after setup. (Including PL header, TLV, RPC).
-pub fn setup_rpc2(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
+// pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
+pub fn setup_rpc(frame: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
     // todo: I don't like how we need to specify another size constraint here, in addition to the frame buf.
     let mut rpc_buf = [0; MAX_RPC_SIZE];
 
-    let data_len = data.len();
-
-    // We use a separate buffer for the RPC header, since we must encode its size
-    // prior to its contents, but its size comes about after we learn its contents.
-    let mut rpc_hdr_buf = [0; RPC_HEADER_MAX_SIZE];
-
-    let hdr_len = rpc_hdr.to_bytes(&mut rpc_hdr_buf);
-    // println!("Header len: {:?}", hdr_len);
-
-    // This `i` is relative to the RPC section, after the payload header.
     let mut i = 0;
 
-    // todo: What should these Wire Types be??
+    i += rpc.to_bytes(&mut rpc_buf, data);
 
-    // RPC header len, and its tag.
-    // rpc_buf[i] = make_tag(1, WireType::Basic);
-    // i += 1;
-    // i += encode_varint(hdr_len as u64, &mut rpc_buf[i..]);
-
-    println!("header buf: {:?}", &rpc_hdr_buf);
-    println!("rpc buf: {:?}", &rpc_buf);
-
-    // RPC header
-    rpc_buf[i..i + hdr_len].copy_from_slice(&rpc_hdr_buf[..hdr_len]);
-    i += hdr_len;
-
-    // Data Len, and its tag.
-    // rpc_buf[i] = make_tag(2, WireType::Basic);
-    rpc_buf[i] = make_tag(2, WireType::LenDetermined);
-    i += 1;
-    i += encode_varint(data_len as u64, &mut rpc_buf[i..]);
-
-    rpc_buf[i..i + data_len].copy_from_slice(data);
-    i += data_len;
+    println!("RPC len: {}", i);
+    println!("RPC buf: {:?}", &rpc_buf[..i]);
 
     build_frame(frame, &rpc_buf[..i])
 }
 
-/// Sets up an RPC command. This makes calls to set up payload header and TLV.
-/// returns the total payload size after setup. (Including PL header, TLV, RPC).
-pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
-    // todo: I don't like how we need to specify another size constraint here, in addition to the frame buf.
-    let mut rpc_buf = [0; MAX_RPC_SIZE];
-
-
-    // We use a separate buffer for the RPC header, since we must encode its size
-    // prior to its contents, but its size comes about after we learn its contents.
-    // let mut rpc_hdr_buf = [0; RPC_HEADER_MAX_SIZE];
-
-    let mut i = 0;
-    // let hdr_len = rpc_hdr.to_bytes(&mut rpc_buf);
-    // i += hdr_len;
-
-    let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
-    i += rpc.to_bytes(&mut rpc_buf);
-
-    println!("RPC len pre-data: {}", i);
-
-    let data_len = data.len();
-    rpc_buf[i..i + data_len].copy_from_slice(data);
-    i += data_len;
-
-    println!("RPC buf: {:?} - Len: {}", &rpc_buf[..i], i);
-
-    build_frame(frame, &rpc_buf[..i])
+/// Handles making tags, and encoding as varints. Increments the index.
+/// todo: Consider here, and `encode_varint`, using u32 vice u64.
+pub(crate) fn write_rpc_var(
+    buf: &mut [u8],
+    field: u16,
+    wire_type: WireType,
+    val: u64,
+    i: &mut usize,
+) {
+    let tag = make_tag(field, wire_type);
+    *i += encode_varint(tag as u64, &mut buf[*i..]);
+    *i += encode_varint(val, &mut buf[*i..]);
 }

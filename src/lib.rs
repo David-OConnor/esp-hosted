@@ -37,8 +37,8 @@ macro_rules! copy_le {
 }
 
 use crate::{
-    protocol::{CRC_SIZE, HEADER_SIZE, Module, RPC_HEADER_MAX_SIZE, build_frame},
-    rpc::{RpcHeader, WireType, make_tag, setup_rpc},
+    protocol::{HEADER_SIZE, RPC_HEADER_MAX_SIZE},
+    rpc::{Rpc, setup_rpc},
     rpc_enums::RpcId,
     transport::compute_checksum,
 };
@@ -81,15 +81,18 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 7;
     let mut frame_buf = [0; FRAME_LEN];
 
-    let iface_num = 0; // todo: or 1?
-    let data = [iface_num];
+    // let iface_num = 0; // todo: or 1?
+    // let data = [iface_num];
+    let data = [];
 
-    let rpc_hdr = RpcHeader {
-        id: RpcId::ReqWifiApGetStaList,
-        len: 1, // Payload len of 1: Interface number.
-    };
+    // let rpc_hdr = RpcHeader {
+    //     id: RpcId::ReqWifiApGetStaList,
+    //     len: 1, // Payload len of 1: Interface number.
+    // };
 
-    let frame_len = setup_rpc(&mut frame_buf, &rpc_hdr, &data);
+    let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
+
+    let frame_len = setup_rpc(&mut frame_buf, &rpc, &data);
     println!("Total frame size sent: {:?}", frame_len);
 
     uart.write(&frame_buf[..frame_len])?;

@@ -3,11 +3,10 @@
 use heapless::{String, Vec};
 
 use crate::{
-    EspError, Module, build_frame,
+    EspError,
     protocol::{HEADER_SIZE, RPC_HEADER_MAX_SIZE},
-    rpc::{RpcHeader, setup_rpc},
+    rpc::{Rpc, setup_rpc},
     rpc_enums::RpcId,
-    transport::compute_checksum,
 };
 #[cfg(feature = "hal")]
 use crate::{Uart, UartError};
@@ -38,15 +37,19 @@ pub fn get_aps(
     let mut frame_buf = [0; FRAME_LEN];
 
     let iface_num = 0; // todo: or 1?
-    let data = [iface_num];
+    // let data = [iface_num];
+    let data = [];
 
-    let rpc_hdr = RpcHeader {
-        id: RpcId::ReqWifiApGetStaList,
-        len: 1, // Payload len of 1: Interface number.
-    };
+    // let rpc_hdr = RpcHeader {
+    //     id: RpcId::ReqWifiApGetStaList,
+    //     len: 1, // Payload len of 1: Interface number.
+    // };
 
-    setup_rpc(&mut frame_buf, &rpc_hdr, &data);
-    uart.write(&frame_buf)?;
+    let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
+
+    let frame_len = setup_rpc(&mut frame_buf, &rpc, &data);
+
+    uart.write(&frame_buf[..frame_len])?;
 
     // // 2 → collect results
     // loop {
