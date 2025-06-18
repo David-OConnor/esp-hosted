@@ -12,7 +12,7 @@ The first twelve bytes are a payload header common to all messages.
 
 - **0, bits 0:4**: Interface type: An `8-bit enum` with values like Serial, AP, and HCI.
 - **0, bits 4:8**: Interface number. 0 is a good default.
-- **1:** flags
+- **1:** flags. 0 is a good default.
 - **2, 3:** Payload length: `u16`. The size, in bytes, of everything in the frame following this header.
 - **4, 5**: Offset: `u16`. **Always = [12, 0]** (This header's size). Indicates the byte index the payload starts.
 - **6, 7:** Checksum, calculated over the entire frame; see below. Initialize it to 0, then compute at the end.
@@ -99,7 +99,8 @@ We will demonstrate sending a frame that requests a list of Wi-Fi Access points.
 Break down:
 
 ### Payload header
-Other than payload length, this is generic, and will be similar for all messages you send and receive.
+This is generic, and will be similar for all messages you send and receive. Set payload length and checksum as
+required. Increment sequence number.
 
 `[3, 0, 22, 0, 12, 0, 66, 3, 0, 0, 0, 0]`
 - 
@@ -161,3 +162,7 @@ MsgType_Invalid = 0;
 message Rpc_Req_WifiApGetStaList {
 }
 ```
+
+
+Hmm again:
+This is the `Rpc` the post-TLV payload is decoding into:

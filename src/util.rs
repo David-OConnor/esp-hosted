@@ -1,3 +1,13 @@
+use crate::rpc::{make_tag, WireType};
+
+/// Handles making tags, and encoding as varints. Increments the index.
+/// todo: Consider here, and `encode_varint`, using u32 vice u64.
+pub(crate) fn write_rpc_var(buf: &mut [u8], field: u8, wire_type: WireType, val: u64, i: &mut usize) {
+    buf[*i] = make_tag(field, wire_type);
+    *i += 1;
+    *i += encode_varint(val, &mut buf[*i..]);
+}
+
 /// Encodes `v` as little-endian 7-bit var-int.
 /// Returns number of bytes written (1–3 for a `u16`).
 pub(crate) fn encode_varint(mut v: u64, out: &mut [u8]) -> usize {

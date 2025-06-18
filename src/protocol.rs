@@ -54,41 +54,6 @@ pub(crate) enum Module {
     Ble = 0x02,
 }
 
-// todo: DO I need this SLIP-encoding? UART-only, if so.
-/// SLIP-encode into `out`, return number of bytes written.
-/// // todo: Verify the provenance.
-pub(crate) fn slip_encode(src: &[u8], out: &mut [u8]) -> usize {
-    const END: u8 = 0xC0;
-    const ESC: u8 = 0xDB;
-    const ESC_END: u8 = 0xDC;
-    const ESC_ESC: u8 = 0xDD;
-
-    let mut w = 0;
-    out[w] = END; // flush garbage on the line
-    w += 1;
-
-    for &b in src {
-        match b {
-            END => {
-                out[w] = ESC;
-                out[w + 1] = ESC_END;
-                w += 2;
-            }
-            ESC => {
-                out[w] = ESC;
-                out[w + 1] = ESC_ESC;
-                w += 2;
-            }
-            _ => {
-                out[w] = b;
-                w += 1;
-            }
-        }
-    }
-    out[w] = END;
-    w + 1 // trailing END
-}
-
 /// Adapted from `esp-hosted-mcu/common/esp_hosted_header.h`
 /// This is at the start of the message, and is followed by the RPC header.
 /// See ESP-hosted-MCU readme, section 7.1.

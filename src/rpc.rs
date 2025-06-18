@@ -11,6 +11,7 @@ use crate::{
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
     util::{decode_varint, encode_varint},
 };
+use crate::util::write_rpc_var;
 
 const MAX_RPC_SIZE: usize = 100; // todo temp.
 
@@ -22,11 +23,35 @@ pub(crate) fn make_tag(field: u8, wire_type: WireType) -> u8 {
 // todo: Experimenting.
 /// esp_hosted_rpc.pb-c.h
 pub(crate) struct Rpc {
-    // pub base: ProtobufCMessage,
+    /// E.g. send a request, and receive a response or event. Varint.
     pub msg_type: RpcType,
-    pub msg_id: RpcId,
+    /// Identifies the type of message we're sending.
+    pub msg_id: RpcId, // Encoded as varint.
+    /// This is used for tracking purposes; it can be anything we want. Responses will match it. Varint.
     pub uid: u32,
-    // pub payload_case: PayloadCase,
+}
+
+impl Rpc {
+    pub fn new_req(msg_id: RpcId, uid: u32) -> Self {
+        Self {
+            msg_type: RpcType::Req,
+            msg_id,
+            uid,
+        }
+    }
+
+    /// Returns the total size used.
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        // todo: Is this the right wire type? (All fields)
+        write_rpc_var(buf, 1, WireType::Basic, self.msg_type as u64, &mut i);
+        write_rpc_var(buf, 2, WireType::Basic, self.msg_id as u64, &mut i);
+        // write_rpc_var(buf, 3, WireType::Basic, self.uid as u64, &mut i);
+        write_rpc_var(buf, 3, WireType::LenDetermined, self.uid as u64, &mut i);
+
+        i
+    }
 }
 
 /// Wire types:
@@ -56,28 +81,7 @@ impl RpcHeader {
 
         // todo: experimenting...
         //// -----------
-        let header = Rpc {
-            // pub base: ProtobufCMessage,
-            msg_type: RpcType::Req,
-            msg_id: RpcId::ReqWifiApGetStaList,
-            uid: 0,
-            // payload_case: PayloadCase::NotSet,
-        };
-
-        buf[i] = make_tag(1, WireType::Basic);
-        i += 1;
-        i += encode_varint(header.msg_type as u64, &mut buf[i..]);
-
-        buf[i] = make_tag(2, WireType::Basic);
-        i += 1;
-        i += encode_varint(header.msg_id as u64, &mut buf[i..]);
-
-        buf[i] = make_tag(3, WireType::Basic);
-        i += 1;
-        i += encode_varint(header.uid as u8 as u64, &mut buf[i..]);
-
-        // todo: msg case = msg id at end?
-
+        let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
         return i; // todo...
 
         //----------
@@ -176,6 +180,7 @@ pub(crate) enum Rpc_Status {
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
 /// See `esp_hosted_rpc.proto`, enum by this name. And `esp_hosted_rpc.pb-c.h`. (Maybe taken from there?)
+/// We encode this as a varint.
 pub(crate) enum RpcType {
     MsgType_Invalid = 0,
     Req = 1,
@@ -218,7 +223,7 @@ impl RpcEndpoint {
 
 /// Sets up an RPC command. This makes calls to set up payload header and TLV.
 /// returns the total payload size after setup. (Including PL header, TLV, RPC).
-pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
+pub fn setup_rpc2(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
     // todo: I don't like how we need to specify another size constraint here, in addition to the frame buf.
     let mut rpc_buf = [0; MAX_RPC_SIZE];
 
@@ -229,7 +234,7 @@ pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
     let mut rpc_hdr_buf = [0; RPC_HEADER_MAX_SIZE];
 
     let hdr_len = rpc_hdr.to_bytes(&mut rpc_hdr_buf);
-    println!("Header len: {:?}", hdr_len);
+    // println!("Header len: {:?}", hdr_len);
 
     // This `i` is relative to the RPC section, after the payload header.
     let mut i = 0;
@@ -256,6 +261,35 @@ pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
 
     rpc_buf[i..i + data_len].copy_from_slice(data);
     i += data_len;
+
+    build_frame(frame, &rpc_buf[..i])
+}
+
+/// Sets up an RPC command. This makes calls to set up payload header and TLV.
+/// returns the total payload size after setup. (Including PL header, TLV, RPC).
+pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
+    // todo: I don't like how we need to specify another size constraint here, in addition to the frame buf.
+    let mut rpc_buf = [0; MAX_RPC_SIZE];
+
+
+    // We use a separate buffer for the RPC header, since we must encode its size
+    // prior to its contents, but its size comes about after we learn its contents.
+    // let mut rpc_hdr_buf = [0; RPC_HEADER_MAX_SIZE];
+
+    let mut i = 0;
+    // let hdr_len = rpc_hdr.to_bytes(&mut rpc_buf);
+    // i += hdr_len;
+
+    let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
+    i += rpc.to_bytes(&mut rpc_buf);
+
+    println!("RPC len pre-data: {}", i);
+
+    let data_len = data.len();
+    rpc_buf[i..i + data_len].copy_from_slice(data);
+    i += data_len;
+
+    println!("RPC buf: {:?} - Len: {}", &rpc_buf[..i], i);
 
     build_frame(frame, &rpc_buf[..i])
 }

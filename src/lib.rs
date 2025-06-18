@@ -94,11 +94,6 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
 
     uart.write(&frame_buf[..frame_len])?;
 
-    // todo: Experimenting with slip_buf. wrap this in a helper if required.
-    // let mut slip_buf = [0u8; 2 * PING_FRAME_LEN + 2]; // worst-case expansion
-    // let slip_len = slip_encode(&frame_buf[..frame_len], &mut slip_buf);
-    // uart.write(&slip_buf[..slip_len])?;
-
     println!("Writing status check frame: {:?}", &frame_buf[..frame_len]);
 
     // let mut hdr = [0; HEADER_SIZE];
