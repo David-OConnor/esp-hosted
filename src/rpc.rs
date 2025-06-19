@@ -6,7 +6,7 @@ use num_enum::TryFromPrimitive;
 
 use crate::{
     protocol::build_frame,
-    rpc_enums::RpcId,
+    proto_data::RpcId,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
     util::encode_varint,
 };

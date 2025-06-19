@@ -129,23 +129,4 @@ Note that all numerical values here are varint-encoded.
 - **0**: UID; a unique identifier of the requester's  choice, used to track the response.
 
 - **186, 19** Tag field = 311 (The RPC ID), wire type 2 (Length determined)
-- **0** Data len encoded as varint.
-
-
-Hmm:
-```proto
-enum RpcType {
-MsgType_Invalid = 0;
-	Req = 1;
-	Resp = 2;
-	Event = 3;
-	MsgType_Max = 4;
-}
-
-message Rpc_Req_WifiApGetStaList {
-}
-```
-
-
-Hmm again:
-This is the `Rpc` the post-TLV payload is decoding into:
+- **0** Data len encoded as varint. (No payload data is required for this message's RPC ID)

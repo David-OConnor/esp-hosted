@@ -19,12 +19,10 @@ const TLV_HEADER_SIZE: usize = 6;
 // RPC_EP_NAME_EVT is the same size as `RPC_EP_NAME_RESP`.
 pub(crate) const TLV_SIZE: usize = TLV_HEADER_SIZE + RPC_EP_NAME_RSP.len();
 
-// Worst-case size:  tag(1) + 2-byte varint + tag(1) + 3-byte varint = 7
-pub(crate) const RPC_HEADER_MAX_SIZE: usize = 7;
-
 pub(crate) const CRC_SIZE: usize = 2; // todo: Determine if you need this; for trailing CRC.
 
 pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
+pub(crate) const RPC_MIN_SIZE: usize = 10;
 
 static SEQ_NUM: AtomicU16 = AtomicU16::new(0);
 

@@ -7,7 +7,7 @@
 mod protocol;
 mod rf;
 mod rpc;
-mod rpc_enums;
+mod proto_data;
 mod transport;
 mod util;
 // mod misc;
@@ -16,15 +16,17 @@ pub enum DataError {
     Invalid,
 }
 
-use defmt::println;
+use defmt::{println, Format};
 #[cfg(feature = "hal")]
 use hal::{
-    pac::{SPI2, USART1, USART2},
-    spi::{Spi, SpiError},
+    pac::{USART2},
     usart::{UartError, Usart},
 };
-use heapless::{String, Vec};
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::{TryFromPrimitive};
+use crate::proto_data::{RpcId, RpcReqConfigHeartbeat};
+use crate::protocol::{HEADER_SIZE, RPC_MIN_SIZE};
+use crate::rf::{get_wifi_mode, req_wifi_init, wifi_init};
+use crate::rpc::{setup_rpc, Rpc};
 
 #[macro_export]
 macro_rules! parse_le {
@@ -35,13 +37,6 @@ macro_rules! parse_le {
 macro_rules! copy_le {
     ($dest:expr, $src:expr, $range:expr) => {{ $dest[$range].copy_from_slice(&$src.to_le_bytes()) }};
 }
-
-use crate::{
-    protocol::{HEADER_SIZE, RPC_HEADER_MAX_SIZE},
-    rpc::{Rpc, setup_rpc},
-    rpc_enums::RpcId,
-    transport::compute_checksum,
-};
 
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
@@ -57,8 +52,11 @@ const ESP_ERR_HOSTED_BASE: u16 = 0x2f00;
 
 const MORE_FRAGMENT: u8 = 1 << 0; // todo type and if we use it.
 
+const FRAME_LEN_TX: usize = HEADER_SIZE + RPC_MIN_SIZE + 200; // todo: A/R
+static mut TX_BUF: [u8; FRAME_LEN_TX] = [0; FRAME_LEN_TX];
+
 /// A simple error enum for our host-side protocol
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum EspError {
     #[cfg(feature = "hal")]
     Uart(UartError),
@@ -75,64 +73,44 @@ impl From<UartError> for EspError {
     }
 }
 
-#[cfg(feature = "hal")]
-/// Round-trip health-check.  Returns Err on timeout / CRC / protocol error.
-pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
-    const FRAME_LEN: usize = HEADER_SIZE + RPC_HEADER_MAX_SIZE + 7;
-    let mut frame_buf = [0; FRAME_LEN];
 
-    // let iface_num = 0; // todo: or 1?
-    // let data = [iface_num];
-    let data = [];
+/// Returns size written.
+pub fn config_heartbeat(buf: &mut [u8], uid: u32, cfg: &RpcReqConfigHeartbeat) -> usize {
 
-    // let rpc_hdr = RpcHeader {
-    //     id: RpcId::ReqWifiApGetStaList,
-    //     len: 1, // Payload len of 1: Interface number.
-    // };
+    let rpc = Rpc::new_req(RpcId::ReqConfigHeartbeat, 0);
+    let mut data = [0; 6]; // todo?
+    let data_len = cfg.to_bytes(&mut data);
 
-    let rpc = Rpc::new_req(RpcId::ReqWifiApGetStaList, 0);
+    let frame_len = setup_rpc(buf, &rpc, &data[..data_len]);
 
-    let frame_len = setup_rpc(&mut frame_buf, &rpc, &data);
     println!("Total frame size sent: {:?}", frame_len);
+    println!("Writing frame: {:?}", &buf[..frame_len]);
 
-    uart.write(&frame_buf[..frame_len])?;
+    frame_len
+}
 
-    println!("Writing status check frame: {:?}", &frame_buf[..frame_len]);
 
-    // let mut hdr = [0; HEADER_SIZE];
-    // let mut hdr = [0; 12];
-    let mut hdr = [0; 4];
+#[cfg(feature = "hal")]
+pub fn status_check(uart: &mut Uart) -> Result<(), EspError> {
+    // let mode = get_wifi_mode(uart);
+    // println!("Wifi mode: {:?}", mode);
 
-    // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
-    uart.read(&mut hdr)?;
+    // wifi_init(uart)?;
 
-    println!("Header buf read: {:?}", hdr);
+    let cfg = RpcReqConfigHeartbeat {
+        enable: true,
+        duration: 1,
+    };
 
-    let len = u16::from_le_bytes([hdr[2], hdr[3]]) as usize;
-
-    return Ok(());
-
-    // --------- receive payload + CRC ---------
-    let mut rest = [0; 1_026]; // more than enough for empty payload + CRC
-    // uart.read_exact_timeout(&mut rest[..len + CRC_LEN], timeout_ms)?;
-    uart.read(&mut rest[..len])?;
-
-    // validate CRC
-    let mut full = [0u8; HEADER_SIZE + 1_026];
-    full[..HEADER_SIZE].copy_from_slice(&hdr);
-    full[HEADER_SIZE..HEADER_SIZE + len].copy_from_slice(&rest[..len]);
-
-    let rx_crc = u16::from_le_bytes(rest[len..len].try_into().unwrap());
-    if compute_checksum(&full[..HEADER_SIZE + len]) != rx_crc {
-        println!("ESP CRC mismatch"); // todo temp
-        return Err(EspError::CrcMismatch);
+    unsafe {
+        let frame_len = config_heartbeat(&mut TX_BUF, 0, &cfg);
+        uart.write(&TX_BUF[..frame_len])?;
     }
 
-    // // validate that it is indeed a PingResp
-    // if hdr[4] != Module::Ctrl as u8 || hdr[5] != Command::PingResp as u8 {
-    //     println!("ESP Unexpected resp"); // todo temp
-    //     return Err(EspError::UnexpectedResponse(hdr[5]));
-    // }
+    let mut rx_buf = [0; 6];
 
-    Ok(())
+    // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
+    uart.read(&mut rx_buf)?;
+
+    Err(EspError::Timeout)
 }
