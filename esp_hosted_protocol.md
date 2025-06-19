@@ -130,3 +130,8 @@ Note that all numerical values here are varint-encoded.
 
 - **186, 19** Tag field = 311 (The RPC ID), wire type 2 (Length determined)
 - **0** Data len encoded as varint. (No payload data is required for this message's RPC ID)
+
+
+## On the message-specific payload
+Message-specific payloads are encoded in the same way as the RPC packet itself: Using a tag for each field with field
+number and wire type. This is a varint. Each field's contents is also a varint.

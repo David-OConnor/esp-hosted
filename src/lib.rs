@@ -1,6 +1,7 @@
 #![no_std]
 #![allow(dead_code)]
 #![allow(non_camel_case_types)]
+#![allow(static_mut_refs)]
 
 //! An interface for interacting with ESP-Hosted-MCU firmware, via UART.
 
