@@ -33,10 +33,9 @@ The TLV (type, length, value) header further describes _endpoint_ and length dat
 
 ### Remaining bytes: RPC data
 The remaining data is specific to the request or response type, and is structured according to the RPC protocol.
-It uses variable-length integers (_varints_), so we will no longer use fixed indices to describe structure. The data is organized
-as follows, with no spacing between items. 
+It uses variable-length integers (_varints_). The data is organized as follows, with no spacing between items. 
 
-The `Tag` type is used several types. It's a `u8`-encoded enum of two values: (field <<3) | (wire_type as u8). 
+The `Tag` type is used several types. It's a varint-encoded enum of two values: (field <<3) | (wire_type as u8). 
 Field is a `u8`starting at 1. Wire type is an enum as follows:
 
 ```rust
@@ -52,25 +51,17 @@ Field is a `u8`starting at 1. Wire type is an enum as follows:
 }
 ```
 
-[//]: # ( todo: QC these wire types)
+Frame data continued, starting at byte 24 (All varints, except the payload).
 
-The frame layout, starting at byte 24:
-### RPC header len
-- **RPC header len tag** `Tag`. **Always `0x08`**. (Field = 1, wire type = 0).
-- **RPC header len**: `variant` of the total size of the RPC header. (Generally 5-7 for Esp-Hosted-MCU)
-
-### RPC header
-- **RPC tag**: `Tag` (for Rpc ID). **Always `0x08`**. (Field = 1, wire type = 0).
-- **Rpc ID.** A **varint-encoded enum, always len 2** that describes the operation performed. For example, if this is requesting to set a power level,
-configure something, data in regards to a request etc. These are currently all 2 bits long for ESP-Hosted-MCU
-operations.
-- **Payload len tag**: `Tag`. **Always `0x10`**. (Field = 2, wire type = 0).
-- **Payload len**: Variant of the payload following this. The payload is in a format determined by Rpd ID.
-
-### RPC data
-- **Data len tag** `Tag`. **Always `0x08`**. (Field = 1, wire type = 0).
-- **Data len**: `variant` of the total size of the data
-- **Data** Makes up the rest of the message; specific to RPC type.
+- **24**: Tag for field 1, wire type 0; always 8.
+- **25**: RPC message type: (e.g. 1 for Request, 2 for Response.)
+- **26**: Tag for field 2, wire type 0; always 16.
+- **27, 28**: RPC ID, encoded as a varint. This defines the nature of the request.
+- **29**: Tag for field 3, wire type 0; always 24.
+- **30-**: UID; a unique identifier of the requester's choice.
+- **next**: Tag with field = the message id, and wire type 2 (Length determined).
+- **next**: Data length (The RPC-id-specific payload that follows)
+- **next**: Data, as required.
 
 
 ## Checksum computation
@@ -93,8 +84,7 @@ fn compute_checksum(buf: &[u8]) -> u16 {
 ## Example composing a simple frame
 We will demonstrate sending a frame that requests a list of Wi-Fi Access points. The full frame we send, 34-bytes long:
 
-[//]: # (`[3, 0, 22, 0, 12, 0, 66, 3, 0, 0, 0, 0, 1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 10, 0, 8, 5, 8, 183, 2, 16, 1, 16, 1, 0]`)
-`[3, 0, 18, 0, 12, 0, 30, 3, 0, 0, 0, 0, 1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 6, 0, 8, 183, 2, 18, 1, 0]`
+`[3, 0, 22, 0, 12, 0, 30, 4, 21, 0, 0, 0, 1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 10, 0, 8, 1, 16, 183, 2, 24, 0, 186, 19, 0]`
 
 Break down:
 
@@ -102,51 +92,44 @@ Break down:
 This is generic, and will be similar for all messages you send and receive. Set payload length and checksum as
 required. Increment sequence number.
 
-`[3, 0, 22, 0, 12, 0, 66, 3, 0, 0, 0, 0]`
+`[3, 0, 22, 0, 12, 0, 30, 4, 21, 0, 0, 0]`
 - 
 - **3:** Interface type = 3 (Serial). Interface number = 0.
 - **0:** No flags
 - **22, 0:** Payload len, following this header, of 22. (12 + 22 = 34 byte frame size)
 - **12, 0:** Payload header size = 12 for offset
-- **30, 3** Checksum
-- **0, 0**: Sequence number 0. (You may wish to increment this each message you send)
+- **30, 4** Checksum
+- **21, 0**: Sequence number. (You may wish to increment this each message you send)
 - **0, 0**: Throttle 0, and no relevant packet type.
 
 
 ### TLV header
 Other than RPC length, this is generic.
 
-[//]: # (`[1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 10, 0]`)
-`[1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 6, 0]`
+`[1, 6, 0, 82, 80, 67, 82, 115, 112, 2, 10, 0]`
 
 - **1:** Always
 - **6, 0:** Always
 - **82, 80, 67, 82, 115, 112**: b"RPCRsp"
 - **2:** Always
-[//]: # (**10, 0** 10 bytes remain in the frame, following this TLV header.)
-- **6, 0** 6 bytes remain in the frame, following this TLV header.
+- **10, 0** 10 bytes remain in the frame, following this TLV header.
 
 
 ### RPC data
 This is the non-generic part of our message. In this example, requesting WiFi stations.
+Note that all numerical values here are varint-encoded.
 
-[//]: # (`[8, 5, 8, 183, 2, 16, 1, 16, 1, 0]`)
-[//]: # (`[8, 183, 2, 18, 1, 0]`)
-`[8, 183, 2, 18, 1, 26, 1, 0]`
+`[8, 1, 16, 183, 2, 24, 0, 186, 19, 0]`
 
-todo: So, skip: 1: Header len + its tag.  2: Duplicate entry of data len + its tag
+- **8:**: Tag for field 1, wire type 0; always this.
+- **1**: RPC message type: Request.
+- **16**: Tag for field 2, wire type 0; always this.
+- **183, 2**: RPC ID = 311, encoded as varint.
+- **24**: Tag for field 3, wire type 0; always this.
+- **0**: UID; a unique identifier of the requester's  choice, used to track the response.
 
-[//]: # (**8:**: Tag; always this.)
-[//]: # (**5:**: RPC header len = 5, encoded as varint.)
-- **8:**: Tag; always this.
-- **183, 2**: RPC ID = 311, encoded as varint. (Part of RPC header)
-
-[//]: # (**18**: Tag for data len; always this.  &#40;Part of RPC header&#41;)
-[//]: # (**1**: Data len encoded as varint. &#40;Part of RPC header&#41;)
-
-- **18** Tag for data again; always this.
-- **1** Data len encoded as varint, again
-- **0** A RpcID-specific payload. In this case, it specifies the interface number.
+- **186, 19** Tag field = 311 (The RPC ID), wire type 2 (Length determined)
+- **0** Data len encoded as varint.
 
 
 Hmm:

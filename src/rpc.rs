@@ -64,17 +64,6 @@ impl Rpc {
 
         i
 
-        // My attempt:
-
-        // Buf: `[8, 1, 16, 183, 2, 24, 0]`
-        // 8: Tag(Field 1, wire type: basic)
-        // 1: Message type request
-        // 16: Tag (Field 2, wire type: basic)
-        // 183, 2: Msg ID (RPC ID) 311: ReqWifiApGetStaList
-        // 24: Tag (Field 3, wire type: basic)
-        // 0: Uid = 0 (Can be anything)
-
-        // Here's what ChatGPT thinks:
 
         // Buf: `[8, 1, 16, 183, 2, 24, 0, || 186, 19, 0]`
         // 8: Tag(Field 1, wire type: basic)

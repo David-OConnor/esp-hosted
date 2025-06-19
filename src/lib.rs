@@ -100,7 +100,8 @@ pub fn status_check(uart: &mut Uart, timeout_ms: u32) -> Result<(), EspError> {
     println!("Writing status check frame: {:?}", &frame_buf[..frame_len]);
 
     // let mut hdr = [0; HEADER_SIZE];
-    let mut hdr = [0; 12];
+    // let mut hdr = [0; 12];
+    let mut hdr = [0; 4];
 
     // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
     uart.read(&mut hdr)?;
