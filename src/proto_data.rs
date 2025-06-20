@@ -4,7 +4,8 @@
 use defmt::Format;
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
-use crate::rpc::{write_rpc_var, WireType};
+
+use crate::rpc::{WireType, write_rpc_var};
 
 const MAX_DATA_SIZE: usize = 1000; // todo temp
 
@@ -233,7 +234,7 @@ pub enum RpcId {
     EventMax = 777,
 }
 
-#[derive(Default, Format)]
+#[derive(Clone, Default, Format)]
 pub struct WifiInitConfig {
     pub static_rx_buf_num: i32,
     pub dynamic_rx_buf_num: i32,
@@ -393,7 +394,6 @@ pub struct WifiStaList {
     pub num: i32,
 }
 
-
 // ---------- OTA ----------
 #[derive(Format)]
 pub struct RpcReqOtaBegin;
@@ -445,11 +445,12 @@ pub struct RpcRespWifiGetMaxTxPower {
 #[derive(Format)]
 pub struct RpcReqConfigHeartbeat {
     pub enable: bool,
+    /// It appears that this is in intervals of 10s.
     pub duration: i32,
 }
 
 impl RpcReqConfigHeartbeat {
-    pub fn to_bytes(&self, buf:  &mut [u8]) -> usize {
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
         let mut i = 0;
 
         write_rpc_var(buf, 1, WireType::Basic, self.enable as u64, &mut i);
@@ -468,6 +469,17 @@ pub struct RpcRespConfigHeartbeat {
 #[derive(Format)]
 pub struct RpcReqWifiInit {
     pub cfg: WifiInitConfig,
+}
+
+impl RpcReqWifiInit {
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        // write_rpc_var(buf, 1, WireType::Basic, self.enable as u64, &mut i);
+        // write_rpc_var(buf, 2, WireType::Basic, self.duration as u64, &mut i);
+
+        i
+    }
 }
 
 #[derive(Format)]
@@ -702,5 +714,3 @@ pub struct RpcRespWifiGetChannel {
     pub primary: i32,
     pub second: i32,
 }
-
-

@@ -3,6 +3,7 @@
 
 use core::sync::atomic::{AtomicU16, Ordering};
 
+use defmt::Format;
 use num_enum::TryFromPrimitive;
 
 use crate::{
@@ -21,12 +22,11 @@ pub(crate) const TLV_SIZE: usize = TLV_HEADER_SIZE + RPC_EP_NAME_RSP.len();
 
 pub(crate) const CRC_SIZE: usize = 2; // todo: Determine if you need this; for trailing CRC.
 
-pub(crate) const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
-pub(crate) const RPC_MIN_SIZE: usize = 10;
+pub const HEADER_SIZE: usize = PL_HEADER_SIZE + TLV_SIZE;
 
 static SEQ_NUM: AtomicU16 = AtomicU16::new(0);
 
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
 /// See ESP-Hosted-MCU readme, section 7.2
 /// /// [official enum](https://github.com/espressif/esp-hosted-mcu/blob/634e51233af2f8124dfa8118747f97f8615ea4a6/common/esp_hosted_interface.h)
@@ -55,7 +55,8 @@ pub(crate) enum Module {
 /// Adapted from `esp-hosted-mcu/common/esp_hosted_header.h`
 /// This is at the start of the message, and is followed by the RPC header.
 /// See ESP-hosted-MCU readme, section 7.1.
-struct PayloadHeader {
+#[derive(Format)]
+pub struct PayloadHeader {
     /// Interface type. Serial, AP etc.
     pub if_type: InterfaceType, // 2 4-bit values
     /// Interface number. 0 may be a good default?

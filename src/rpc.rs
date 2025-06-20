@@ -5,13 +5,16 @@ use defmt::{Format, println};
 use num_enum::TryFromPrimitive;
 
 use crate::{
-    protocol::build_frame,
+    EspError,
+    header::build_frame,
+    parse_le,
     proto_data::RpcId,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
-    util::encode_varint,
+    util::{decode_varint, encode_varint},
 };
 
 const MAX_RPC_SIZE: usize = 100; // todo temp.
+pub(crate) const RPC_MIN_SIZE: usize = 10;
 
 /// Used in a few places when setting up RPC.
 // pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u8 {
@@ -21,7 +24,8 @@ pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u16 {
 
 // todo: Experimenting.
 /// esp_hosted_rpc.pb-c.h
-pub(crate) struct Rpc {
+#[derive(Format)]
+pub struct Rpc {
     /// E.g. send a request, and receive a response or event. Varint.
     pub msg_type: RpcType,
     /// Identifies the type of message we're sending.
@@ -64,7 +68,6 @@ impl Rpc {
 
         i
 
-
         // Buf: `[8, 1, 16, 183, 2, 24, 0, || 186, 19, 0]`
         // 8: Tag(Field 1, wire type: basic)
         // 1: Message type request
@@ -73,6 +76,25 @@ impl Rpc {
         // 24: Tag (Field 3, wire type: basic)
 
         // 186, 19, 0 // "empty message??"
+    }
+
+    pub fn from_bytes(buf: &[u8]) -> Result<Self, EspError> {
+        // todo: Use proper varint system; these fixed indices aren't generalizable.
+
+        println!("Parsing RPC buf: {:?}", buf);
+
+        let msg_type = buf[1].try_into().map_err(|e| EspError::InvalidData)?;
+
+        let rpc_id = decode_varint(&buf[3..5]).0 as u16;
+        let msg_id = rpc_id.try_into().map_err(|e| EspError::InvalidData)?;
+
+        let result = Self {
+            msg_type,
+            msg_id,
+            uid: buf[6] as u32, // todo: Only works if single-byte.
+        };
+
+        Ok(result)
     }
 }
 
@@ -138,7 +160,7 @@ pub(crate) enum Rpc_Status {
 #[repr(u8)]
 /// See `esp_hosted_rpc.proto`, enum by this name. And `esp_hosted_rpc.pb-c.h`. (Maybe taken from there?)
 /// We encode this as a varint.
-pub(crate) enum RpcType {
+pub enum RpcType {
     MsgType_Invalid = 0,
     Req = 1,
     Resp = 2,

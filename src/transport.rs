@@ -1,5 +1,6 @@
 //! From `esp_hosted_transport.h`
 
+use defmt::Format;
 use num_enum::TryFromPrimitive;
 
 const PRIO_Q_SERIAL: u8 = 0;
@@ -36,7 +37,7 @@ pub(crate) enum ESP_PRIV_EVENT_TYPE {
     ESP_PRIV_EVENT_INIT = 0x22,
 }
 
-#[derive(Clone, Copy, PartialEq, Default, TryFromPrimitive)]
+#[derive(Clone, Copy, PartialEq, Default, TryFromPrimitive, Format)]
 #[repr(u8)]
 pub(crate) enum PacketType {
     #[default]

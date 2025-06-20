@@ -5,29 +5,30 @@
 
 //! An interface for interacting with ESP-Hosted-MCU firmware, via UART.
 
-mod protocol;
-mod rf;
+mod header;
+pub mod proto_data;
+pub mod rf;
 mod rpc;
-mod proto_data;
 mod transport;
 mod util;
-// mod misc;
 
-pub enum DataError {
-    Invalid,
-}
-
-use defmt::{println, Format};
+use defmt::{Format, println};
 #[cfg(feature = "hal")]
 use hal::{
-    pac::{USART2},
+    pac::USART2,
     usart::{UartError, Usart},
 };
-use num_enum::{TryFromPrimitive};
-use crate::proto_data::{RpcId, RpcReqConfigHeartbeat};
-use crate::protocol::{HEADER_SIZE, RPC_MIN_SIZE};
-use crate::rf::{get_wifi_mode, req_wifi_init, wifi_init};
-use crate::rpc::{setup_rpc, Rpc};
+pub use header::PayloadHeader;
+use num_enum::TryFromPrimitive;
+pub use proto_data::*;
+pub use rf::*;
+
+pub use crate::header::HEADER_SIZE;
+use crate::{
+    header::{PL_HEADER_SIZE, TLV_SIZE},
+    proto_data::RpcId,
+    rpc::{RPC_MIN_SIZE, Rpc, setup_rpc},
+};
 
 #[macro_export]
 macro_rules! parse_le {
@@ -42,7 +43,6 @@ macro_rules! copy_le {
 #[cfg(feature = "hal")]
 // todo: Allow any uart.
 type Uart = Usart<USART2>;
-// type Uart = Usart<USART1>;
 
 // todo: How can we make this flexible? EH?
 
@@ -53,17 +53,23 @@ const ESP_ERR_HOSTED_BASE: u16 = 0x2f00;
 
 const MORE_FRAGMENT: u8 = 1 << 0; // todo type and if we use it.
 
-const FRAME_LEN_TX: usize = HEADER_SIZE + RPC_MIN_SIZE + 200; // todo: A/R
+const FRAME_LEN_TX: usize = HEADER_SIZE + RPC_MIN_SIZE + 300; // todo: A/R
+const DATA_LEN_TX: usize = 200; // todo: A/R
+
 static mut TX_BUF: [u8; FRAME_LEN_TX] = [0; FRAME_LEN_TX];
+static mut DATA_BUF: [u8; DATA_LEN_TX] = [0; DATA_LEN_TX];
 
 /// A simple error enum for our host-side protocol
 #[derive(Debug, Format)]
 pub enum EspError {
     #[cfg(feature = "hal")]
     Uart(UartError),
+    /// e.g. uart, spi etc.
+    Comms,
     UnexpectedResponse(u8),
     CrcMismatch,
     Timeout,
+    InvalidData,
     // todo: etc. as needed
 }
 
@@ -74,44 +80,53 @@ impl From<UartError> for EspError {
     }
 }
 
-
 /// Returns size written.
-pub fn config_heartbeat(buf: &mut [u8], uid: u32, cfg: &RpcReqConfigHeartbeat) -> usize {
-
+pub fn cfg_heartbeat_pl(buf: &mut [u8], uid: u32, cfg: &RpcReqConfigHeartbeat) -> usize {
     let rpc = Rpc::new_req(RpcId::ReqConfigHeartbeat, 0);
-    let mut data = [0; 6]; // todo?
+
+    let mut data = [0; 6]; // Seems to be 4 in for small duration values.
     let data_len = cfg.to_bytes(&mut data);
 
     let frame_len = setup_rpc(buf, &rpc, &data[..data_len]);
 
-    println!("Total frame size sent: {:?}", frame_len);
+    println!("Heartbeat req data size: {:?}", data_len);
     println!("Writing frame: {:?}", &buf[..frame_len]);
 
     frame_len
 }
 
-
-#[cfg(feature = "hal")]
-pub fn status_check(uart: &mut Uart) -> Result<(), EspError> {
-    // let mode = get_wifi_mode(uart);
-    // println!("Wifi mode: {:?}", mode);
-
-    // wifi_init(uart)?;
-
-    let cfg = RpcReqConfigHeartbeat {
-        enable: true,
-        duration: 1,
-    };
-
+// #[cfg(feature = "hal")]
+pub fn cfg_heartbeat<W>(mut write: W, cfg: &RpcReqConfigHeartbeat) -> Result<(), EspError>
+// todo: Typedef this if able.
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
     unsafe {
-        let frame_len = config_heartbeat(&mut TX_BUF, 0, &cfg);
-        uart.write(&TX_BUF[..frame_len])?;
+        let frame_len = cfg_heartbeat_pl(&mut TX_BUF, 0, cfg);
+        write(&TX_BUF[..frame_len])?;
     }
 
-    let mut rx_buf = [0; 6];
+    Ok(())
+}
 
-    // uart.read_exact_timeout(&mut hdr, timeout_ms)?;
-    uart.read(&mut rx_buf)?;
+/// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
+/// the whole message received.
+pub fn parse_msg(buf: &[u8]) -> Result<(PayloadHeader, Rpc, &[u8]), EspError> {
+    let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE]);
+    let total_size = header.len as usize + PL_HEADER_SIZE;
 
-    Err(EspError::Timeout)
+    if total_size > buf.len() {
+        return Err(EspError::InvalidData);
+    }
+
+    let rpc_buf = &buf[HEADER_SIZE..total_size];
+
+    let rpc = Rpc::from_bytes(rpc_buf)?;
+
+    // todo: This hard-coding data start is fragile.
+    let data_buf = &rpc_buf[7..];
+
+    // todo: Return data bytes only, instead of whole rpc bytes.
+
+    Ok((header, rpc, &data_buf))
 }
