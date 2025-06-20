@@ -1,7 +1,7 @@
 //! Contains data types specific to the ESP-Hosted-MCU proto buffer. This contains
 //! definitions for the data types [de]serialized.
 
-use defmt::Format;
+use defmt::{println, Format};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
 
@@ -234,7 +234,7 @@ pub enum RpcId {
     EventMax = 777,
 }
 
-#[derive(Clone, Default, Format)]
+#[derive(Clone, Format)]
 pub struct WifiInitConfig {
     pub static_rx_buf_num: i32,
     pub dynamic_rx_buf_num: i32,
@@ -242,13 +242,16 @@ pub struct WifiInitConfig {
     pub static_tx_buf_num: i32,
     pub dynamic_tx_buf_num: i32,
     pub cache_tx_buf_num: i32,
+    //
     pub csi_enable: i32,
     pub ampdu_rx_enable: i32,
     pub ampdu_tx_enable: i32,
     pub amsdu_tx_enable: i32,
+    //
     pub nvs_enable: i32,
     pub nano_enable: i32,
     pub rx_ba_win: i32,
+    //
     pub wifi_task_core_id: i32,
     pub beacon_max_len: i32,
     pub mgmt_sbuf_num: i32,
@@ -256,6 +259,98 @@ pub struct WifiInitConfig {
     pub sta_disconnected_pm: bool,
     pub espnow_max_encrypt_num: i32,
     pub magic: i32,
+}
+
+impl Default for WifiInitConfig {
+    /// Suitable for use as an AP (Station)
+    fn default() -> Self {
+        Self {
+            static_rx_buf_num: 10,
+            dynamic_rx_buf_num: 32,
+            tx_buf_type: 3, // dynamics
+            static_tx_buf_num: 0,
+            dynamic_tx_buf_num: 32,
+            cache_tx_buf_num: 32,
+            //
+            csi_enable: 0,
+            ampdu_rx_enable: 1,
+            ampdu_tx_enable: 1,
+            amsdu_tx_enable: 1,
+            //
+            nvs_enable: 1, // enable if using WiFi persistence
+            nano_enable: 0,
+            rx_ba_win: 6, // default block ack window
+            //
+            wifi_task_core_id: 0,
+            beacon_max_len: 752, // AP beacon max len
+            mgmt_sbuf_num: 32,
+            feature_caps: 0,
+            sta_disconnected_pm: false,
+            espnow_max_encrypt_num: 7,
+            magic: 0x1F2F3F4F, // todo: QC this.
+        }
+    }
+}
+
+impl WifiInitConfig {
+    /// Suitable for passive use
+    pub fn new_promiscuous() -> Self {
+        Self {
+            static_rx_buf_num: 10,
+            dynamic_rx_buf_num: 64,
+            tx_buf_type: 1,
+            static_tx_buf_num: 0,
+            dynamic_tx_buf_num: 32, // todo? 0 is giving out of range error
+            cache_tx_buf_num: 0,
+            //
+            csi_enable: 0,
+            ampdu_rx_enable: 0,
+            ampdu_tx_enable: 0,
+            amsdu_tx_enable: 0,
+            //
+            nvs_enable: 0, // enable if using WiFi persistence
+            nano_enable: 0,
+            rx_ba_win: 6, // default block ack window
+            //
+            wifi_task_core_id: 0,
+            beacon_max_len: 752, // AP beacon max len
+            mgmt_sbuf_num: 32,
+            feature_caps: 0,
+            sta_disconnected_pm: false,
+            espnow_max_encrypt_num: 0,
+            magic: 0x1F2F3F4F, // todo: QC this.
+        }
+    }
+
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let c = &self;
+        let v = WireType::Varint;
+
+        let mut i = 0;
+
+        write_rpc_var(buf, 1, v, c.static_rx_buf_num as u64, &mut i);
+        write_rpc_var(buf, 2, v, c.dynamic_rx_buf_num as u64, &mut i);
+        write_rpc_var(buf, 3, v, c.tx_buf_type as u64, &mut i);
+        write_rpc_var(buf, 4, v, c.static_tx_buf_num as u64, &mut i);
+        write_rpc_var(buf, 5, v, c.dynamic_tx_buf_num as u64, &mut i);
+        write_rpc_var(buf, 6, v, c.cache_tx_buf_num as u64, &mut i);
+        write_rpc_var(buf, 7, v, c.csi_enable as u64, &mut i);
+        write_rpc_var(buf, 8, v, c.ampdu_rx_enable as u64, &mut i);
+        write_rpc_var(buf, 9, v, c.ampdu_tx_enable as u64, &mut i);
+        write_rpc_var(buf, 10, v, c.amsdu_tx_enable as u64, &mut i);
+        write_rpc_var(buf, 11, v, c.nvs_enable as u64, &mut i);
+        write_rpc_var(buf, 12, v, c.nano_enable as u64, &mut i);
+        write_rpc_var(buf, 13, v, c.rx_ba_win as u64, &mut i);
+        write_rpc_var(buf, 14, v, c.wifi_task_core_id as u64, &mut i);
+        write_rpc_var(buf, 15, v, c.beacon_max_len as u64, &mut i);
+        write_rpc_var(buf, 16, v, c.mgmt_sbuf_num as u64, &mut i);
+        write_rpc_var(buf, 17, v, c.feature_caps, &mut i);
+        write_rpc_var(buf, 18, v, c.sta_disconnected_pm as u64, &mut i);
+        write_rpc_var(buf, 19, v, c.espnow_max_encrypt_num as u64, &mut i);
+        write_rpc_var(buf, 20, v, c.magic as u64, &mut i);
+
+        i
+    }
 }
 
 // ---------- WiFi Country ----------
@@ -453,8 +548,8 @@ impl RpcReqConfigHeartbeat {
     pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
         let mut i = 0;
 
-        write_rpc_var(buf, 1, WireType::Basic, self.enable as u64, &mut i);
-        write_rpc_var(buf, 2, WireType::Basic, self.duration as u64, &mut i);
+        write_rpc_var(buf, 1, WireType::Varint, self.enable as u64, &mut i);
+        write_rpc_var(buf, 2, WireType::Varint, self.duration as u64, &mut i);
 
         i
     }
@@ -473,10 +568,20 @@ pub struct RpcReqWifiInit {
 
 impl RpcReqWifiInit {
     pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-        let mut i = 0;
+        let c = &self.cfg;
+        let v = WireType::Varint;
 
-        // write_rpc_var(buf, 1, WireType::Basic, self.enable as u64, &mut i);
-        // write_rpc_var(buf, 2, WireType::Basic, self.duration as u64, &mut i);
+        // Total size came out to 50 for a test case.
+        let mut buf_init_cfg = [0; 80]; // todo: Not a great place for this.
+
+        let cfg_len = self.cfg.to_bytes(&mut buf_init_cfg);
+        println!("Wifi init cfg len: {:?}", cfg_len);
+
+        let mut i = 0;
+        write_rpc_var(buf, 1, WireType::Len, cfg_len as u64, &mut i);
+
+        buf[i..i + cfg_len].copy_from_slice(&buf_init_cfg[..cfg_len]);
+        i += cfg_len;
 
         i
     }

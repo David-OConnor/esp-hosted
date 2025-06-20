@@ -35,19 +35,23 @@ The TLV (type, length, value) header further describes _endpoint_ and length dat
 The remaining data is specific to the request or response type, and is structured according to the RPC protocol.
 It uses variable-length integers (_varints_). The data is organized as follows, with no spacing between items. 
 
+See the [official Protocol Buffers encoding documentation](https://protobuf.dev/programming-guides/encoding/) for
+details on encoding structs.
+
 The `Tag` type is used several types. It's a varint-encoded enum of two values: (field <<3) | (wire_type as u8). 
 Field is a `u8`starting at 1. Wire type is an enum as follows:
 
 ```rust
- enum WireType {
-    /// 0: int32, uint32, bool, enum, variant
-    Basic = 0,
-    /// 64-bit fixed
-    SixtyFourBit = 1,
-    /// Len-determined (string, bytes, sub-message)
-    LenDetermined = 2,
-    /// 32-bit fixed (fixed32, float)
-    Fixed32Bit = 5,
+pub enum WireType {
+    /// i32, i64, u32, u64, sint64, sint32, sing64, bool, enum
+    Varint = 0,
+    /// fixed64, sfixed64, double
+    I64 = 1,
+    /// Len-determined (string, bytes, embedded messages, packed repeated fields).
+    /// The tag is always followed by the length of the message, as a varint.
+    Len = 2,
+    /// 32-bit fixed (fixed32, sfixed32, float)
+    I32 = 5,
 }
 ```
 

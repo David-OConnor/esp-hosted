@@ -1,5 +1,6 @@
 //! Details about the RPC part of the protocol; this is how our payload
-//! is packaged into the Payload header and TLV structure.
+//! is packaged into the Payload header and TLV structure. It contains a mix of protobuf-general
+//! concepts, and ones specific to the RPC used by esp-hosted-mcu.
 
 use defmt::{Format, println};
 use num_enum::TryFromPrimitive;
@@ -7,31 +8,25 @@ use num_enum::TryFromPrimitive;
 use crate::{
     EspError,
     header::build_frame,
-    parse_le,
     proto_data::RpcId,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
-    util::{decode_varint, encode_varint},
 };
 
 const MAX_RPC_SIZE: usize = 100; // todo temp.
 pub(crate) const RPC_MIN_SIZE: usize = 10;
 
-/// Used in a few places when setting up RPC.
-// pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u8 {
-pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u16 {
-    (field << 3) | (wire_type as u16)
-}
 
-// todo: Experimenting.
-/// esp_hosted_rpc.pb-c.h
+/// See `esp_hosted_rpc.proto`.
 #[derive(Format)]
 pub struct Rpc {
-    /// E.g. send a request, and receive a response or event. Varint.
+    /// E.g. send a request, and receive a response or event.
     pub msg_type: RpcType,
     /// Identifies the type of message we're sending.
-    pub msg_id: RpcId, // Encoded as varint.
-    /// This is used for tracking purposes; it can be anything we want. Responses will match it. Varint.
+    pub msg_id: RpcId,
+    /// This is used for tracking purposes; it can be anything we want. Responses will match it.
     pub uid: u32,
+    // This is followed by a (len-determined; sub-struct) field associated with the RPC Id.
+    // It has field number = Rpc ID.
 }
 
 impl Rpc {
@@ -49,16 +44,17 @@ impl Rpc {
         let data_len = data.len();
 
         // todo: Is this the right wire type? (All fields)
-        write_rpc_var(buf, 1, WireType::Basic, self.msg_type as u64, &mut i);
-        write_rpc_var(buf, 2, WireType::Basic, self.msg_id as u64, &mut i);
-        write_rpc_var(buf, 3, WireType::Basic, self.uid as u64, &mut i);
+        write_rpc_var(buf, 1, WireType::Varint, self.msg_type as u64, &mut i);
+        write_rpc_var(buf, 2, WireType::Varint, self.msg_id as u64, &mut i);
+        write_rpc_var(buf, 3, WireType::Varint, self.uid as u64, &mut i);
 
         // We repeat the message id as the payload's tag field.
         // Note: When using length-determined, we must follow the tag with a varint len.
+
         write_rpc_var(
             buf,
             self.msg_id as u16,
-            WireType::LenDetermined,
+            WireType::Len,
             data_len as u64,
             &mut i,
         );
@@ -67,49 +63,52 @@ impl Rpc {
         i += data_len;
 
         i
-
-        // Buf: `[8, 1, 16, 183, 2, 24, 0, || 186, 19, 0]`
-        // 8: Tag(Field 1, wire type: basic)
-        // 1: Message type request
-        // 16: Tag (Field 2, wire type: basic)
-        // 183, 2: Msg ID (RPC ID) 311: ReqWifiApGetStaList
-        // 24: Tag (Field 3, wire type: basic)
-
-        // 186, 19, 0 // "empty message??"
     }
 
-    pub fn from_bytes(buf: &[u8]) -> Result<Self, EspError> {
-        // todo: Use proper varint system; these fixed indices aren't generalizable.
-
-        println!("Parsing RPC buf: {:?}", buf);
-
+    /// Returns (Self, data start i, data len expected).
+    pub fn from_bytes(buf: &[u8]) -> Result<(Self, usize, usize), EspError> {
         let msg_type = buf[1].try_into().map_err(|e| EspError::InvalidData)?;
 
-        let rpc_id = decode_varint(&buf[3..5]).0 as u16;
-        let msg_id = rpc_id.try_into().map_err(|e| EspError::InvalidData)?;
+        let (rpc_id, rpc_id_size) = decode_varint(&buf[3..])?;
+        let msg_id = (rpc_id as u16)
+            .try_into()
+            .map_err(|e| EspError::InvalidData)?;
+
+        // We are skipping the UID tag; hence the jump from 3 to 4.
+        let mut i = 4 + rpc_id_size;
+
+        let (uid, uid_size) = decode_varint(&buf[i..])?;
+        i += uid_size;
 
         let result = Self {
             msg_type,
             msg_id,
-            uid: buf[6] as u32, // todo: Only works if single-byte.
+            uid: uid as u32,
         };
 
-        Ok(result)
+
+        let (_data_tag, data_tag_size) = decode_varint(&buf[i..])?;
+        i += data_tag_size;
+
+        let (data_len, data_len_size) = decode_varint(&buf[i..])?;
+        i += data_len_size;
+
+        Ok((result, i, data_len as usize))
     }
 }
 
-/// Wire types:
+/// https://protobuf.dev/programming-guides/encoding/
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
 #[repr(u8)]
 pub enum WireType {
-    /// 0: int32, uint32, bool, enum, variant
-    Basic = 0,
-    /// 64-bit fixed
-    SixtyFourBit = 1,
-    /// Len-determined (string, bytes, sub-message)
-    LenDetermined = 2,
-    /// 32-bit fixed (fixed32, float)
-    Fixed32Bit = 5,
+    /// i32, i64, u32, u64, sint64, sint32, sing64, bool, enum
+    Varint = 0,
+    /// fixed64, sfixed64, double
+    I64 = 1,
+    /// Len-determined (string, bytes, embedded messages, packed repeated fields)
+    Len = 2,
+    /// 32-bit fixed (fixed32, sfixed32, float)
+    I32 = 5,
 }
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
@@ -229,4 +228,45 @@ pub(crate) fn write_rpc_var(
     let tag = make_tag(field, wire_type);
     *i += encode_varint(tag as u64, &mut buf[*i..]);
     *i += encode_varint(val, &mut buf[*i..]);
+}
+
+
+/// Used in a few places when setting up RPC.
+pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u16 {
+    (field << 3) | (wire_type as u16)
+}
+
+/// Encodes `v` as little-endian 7-bit var-int.
+/// Returns number of bytes written (1–3 for a `u16`).
+pub(crate) fn encode_varint(mut v: u64, out: &mut [u8]) -> usize {
+    let mut idx = 0;
+    loop {
+        let byte = (v & 0x7F) as u8;
+        v >>= 7;
+        if v == 0 {
+            out[idx] = byte; // last byte – high bit clear
+            idx += 1;
+            break;
+        } else {
+            out[idx] = byte | 0x80; // more bytes follow
+            idx += 1;
+        }
+    }
+    idx
+}
+
+/// Decodes a little-endian 7-bit var-int.
+/// Returns `(value, bytes_consumed)`.
+pub(crate) fn decode_varint(input: &[u8]) -> Result<(u64, usize), EspError> {
+    let mut val = 0u64;
+    let mut shift = 0;
+    for (idx, &byte) in input.iter().enumerate() {
+        val |= ((byte & 0x7F) as u64) << shift;
+        if byte & 0x80 == 0 {
+            return Ok((val, idx + 1));
+        }
+        shift += 7;
+    }
+
+    Err(EspError::InvalidData)
 }

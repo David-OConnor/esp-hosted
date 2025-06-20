@@ -19,24 +19,17 @@ exclude = [".gitignore"]
 
 [dependencies]
 defmt = "1.0.1"
-# todo temp: Use the feature gate, but it's currently not working.
-hal = { package = "stm32-hal2", version = "1.9.4", features = ["g431"]}
+
 heapless = "0.8.0"
-crc-any = {version = "2.5.0", default-features = false}
 num_enum = { version = "0.7.3", default-features = false }
 
+#hal = { package = "stm32-hal2", version = "1.9.4", features = ["g431"]}
 
-# Experimenting with protocufs
-#protobuf = {  version = "4.31.0-release", default-features = false }
-
-
-[build-dependencies]
-#protobuf-codegen = "4.31.0-release"
-
+micropb = { version = "0.3.0", features = ["container-heapless"] }
 
 
 # todo: Allow different features for other MCUs.
-[features]
-hal = ["hal/g431"]
+#[features]
+#hal = ["hal/g431"]
 
 

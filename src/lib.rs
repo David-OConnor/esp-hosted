@@ -10,7 +10,10 @@ pub mod proto_data;
 pub mod rf;
 mod rpc;
 mod transport;
-mod util;
+
+// mod esp_hosted_proto;
+
+use micropb::{MessageDecode, MessageEncode, PbDecoder, PbEncoder};
 
 use defmt::{Format, println};
 #[cfg(feature = "hal")]
@@ -22,6 +25,8 @@ pub use header::PayloadHeader;
 use num_enum::TryFromPrimitive;
 pub use proto_data::*;
 pub use rf::*;
+
+// use esp_hosted_proto::Rpc as Rpc_;
 
 pub use crate::header::HEADER_SIZE;
 use crate::{
@@ -89,13 +94,9 @@ pub fn cfg_heartbeat_pl(buf: &mut [u8], uid: u32, cfg: &RpcReqConfigHeartbeat) -
 
     let frame_len = setup_rpc(buf, &rpc, &data[..data_len]);
 
-    println!("Heartbeat req data size: {:?}", data_len);
-    println!("Writing frame: {:?}", &buf[..frame_len]);
-
     frame_len
 }
 
-// #[cfg(feature = "hal")]
 pub fn cfg_heartbeat<W>(mut write: W, cfg: &RpcReqConfigHeartbeat) -> Result<(), EspError>
 // todo: Typedef this if able.
 where
@@ -121,12 +122,27 @@ pub fn parse_msg(buf: &[u8]) -> Result<(PayloadHeader, Rpc, &[u8]), EspError> {
 
     let rpc_buf = &buf[HEADER_SIZE..total_size];
 
-    let rpc = Rpc::from_bytes(rpc_buf)?;
+    println!("RPC BUF rx: {:?}", rpc_buf);
 
-    // todo: This hard-coding data start is fragile.
-    let data_buf = &rpc_buf[7..];
+    let (rpc, data_start_i, data_len_rpc) = Rpc::from_bytes(rpc_buf)?;
 
-    // todo: Return data bytes only, instead of whole rpc bytes.
+    // todo: Experimenting.
+    // let mut decoder = PbDecoder::new(rpc_buf);
+
+    // let mut rpc_decoded = Rpc_::default();
+    // rpc_decoded.decode(&mut decoder, rpc_buf.len()).unwrap();
+    // println!("Decoded: {:?}", rpc_decoded);
+
+    // println!("DSI: {:?}", data_start_i);
+    // let data_len_from_header = total_size - (HEADER_SIZE + data_start_i);
+
+    // if data_len_from_header != data_len_rpc {
+    //     // todo: Rem this print
+    //     println!("Len from header: {:?} from rpc: {}", data_len_from_header, data_len_rpc);
+    //     return Err(EspError::InvalidData);
+    // }
+
+    let data_buf = &rpc_buf[data_start_i..];
 
     Ok((header, rpc, &data_buf))
 }
