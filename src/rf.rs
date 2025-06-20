@@ -1,17 +1,17 @@
 //! This module contains Wi-Fi and BLE-specific functionality.
 
+use micropb::{PbRead, PbDecoder, PbWrite, PbEncoder, MessageEncode, MessageDecode};
+
 use core::default;
 
 use defmt::{Format, println};
 use heapless::{String, Vec};
+use crate::{AP_BUF_MAX, EspError, RpcReqWifiInit, TX_BUF, WifiInitConfig, header::HEADER_SIZE, proto_data::RpcId, rpc::{RPC_MIN_SIZE, Rpc, setup_rpc}, RpcReqWifiScanStart, Rpc_Req_WifiScanStart, RpcType, Rpc_};
+use crate::rpc::{setup_rpc_proto, write_rpc, WireType};
 
-use crate::{
-    AP_BUF_MAX, EspError, RpcReqWifiInit, TX_BUF, WifiInitConfig,
-    header::HEADER_SIZE,
-    proto_data::RpcId,
-    rpc::{RPC_MIN_SIZE, Rpc, setup_rpc},
-};
-use crate::rpc::{write_rpc_var, WireType};
+use crate::esp_hosted_proto::Rpc as RpcP;
+use crate::esp_hosted_proto::RpcId as RpcIdP;
+use crate::header::build_frame;
 
 /// Information about one Wi-Fi access point
 #[derive(Debug)]
@@ -93,12 +93,12 @@ pub fn wifi_init_pl(buf: &mut [u8], uid: u32, cfg: &WifiInitConfig) -> usize {
 }
 
 // todo: Is this only for station/AP mode.
-pub fn wifi_init<W>(mut write: W, cfg: &WifiInitConfig) -> Result<(), EspError>
+pub fn wifi_init<W>(mut write: W, cfg: &WifiInitConfig, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
     unsafe {
-        let frame_len = wifi_init_pl(&mut TX_BUF, 0, &cfg);
+        let frame_len = wifi_init_pl(&mut TX_BUF, uid, &cfg);
         write(&TX_BUF[..frame_len])?;
     }
 
@@ -133,6 +133,55 @@ where
     Ok(())
 }
 
+// pub fn wifi_scan_start<W>(mut write: W, uid: u32, cfg: &RpcReqWifiScanStart) -> Result<(), EspError>
+pub fn wifi_scan_start<W>(mut write: W, uid: u32, scan_start: Rpc_Req_WifiScanStart) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    let rpc = Rpc::new_req(RpcId::ReqWifiScanStart, uid);
+    //
+    // let mut data = [0; 20];
+    // let i = cfg.to_bytes(&mut data);
+
+
+    // todo: Move to a helper fn that accepts Rpc(P)
+
+    let mut message = RpcP::default();
+
+    message.set_msg_type(RpcType::Req);
+    message.set_msg_id(RpcIdP::ReqWifiScanStart);
+    message.set_uid(uid);
+
+    message.payload = Some(Rpc_::Payload::ReqWifiScanStart(scan_start));
+
+    unsafe {
+        let frame_len = setup_rpc_proto(&mut TX_BUF, &message);
+        write(&TX_BUF[..frame_len])?;
+    }
+
+    Ok(())
+}
+
+pub fn wifi_set_protocol<W>(mut write: W, uid: u32, ifx: i32, bitmap: i32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    let rpc = Rpc::new_req(RpcId::ReqWifiSetProtocol, uid);
+
+    let mut data = [0; 6];
+
+    let mut i = 0;
+    write_rpc(&mut data, 1, WireType::Varint, ifx as u64, &mut i);
+    write_rpc(&mut data, 2, WireType::Varint, bitmap as u64, &mut i);
+
+    unsafe {
+        let frame_len = setup_rpc(&mut TX_BUF, &rpc, &data[0..i]);
+        write(&TX_BUF[..frame_len])?;
+    }
+
+    Ok(())
+}
+
 pub fn wifi_get_protocol<W>(mut write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
@@ -143,7 +192,7 @@ where
     let mut i = 0;
 
     let interface_num = 0; // todo?
-    write_rpc_var(&mut data, 1, WireType::Varint, interface_num, &mut i);
+    write_rpc(&mut data, 1, WireType::Varint, interface_num, &mut i);
     let data_len = i;
 
     unsafe {

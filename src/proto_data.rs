@@ -5,7 +5,8 @@ use defmt::{println, Format};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
 
-use crate::rpc::{WireType, write_rpc_var};
+use crate::rpc::{WireType, write_rpc};
+use crate::rpc::WireType::{Len, Varint};
 
 const MAX_DATA_SIZE: usize = 1000; // todo temp
 
@@ -328,26 +329,26 @@ impl WifiInitConfig {
 
         let mut i = 0;
 
-        write_rpc_var(buf, 1, v, c.static_rx_buf_num as u64, &mut i);
-        write_rpc_var(buf, 2, v, c.dynamic_rx_buf_num as u64, &mut i);
-        write_rpc_var(buf, 3, v, c.tx_buf_type as u64, &mut i);
-        write_rpc_var(buf, 4, v, c.static_tx_buf_num as u64, &mut i);
-        write_rpc_var(buf, 5, v, c.dynamic_tx_buf_num as u64, &mut i);
-        write_rpc_var(buf, 6, v, c.cache_tx_buf_num as u64, &mut i);
-        write_rpc_var(buf, 7, v, c.csi_enable as u64, &mut i);
-        write_rpc_var(buf, 8, v, c.ampdu_rx_enable as u64, &mut i);
-        write_rpc_var(buf, 9, v, c.ampdu_tx_enable as u64, &mut i);
-        write_rpc_var(buf, 10, v, c.amsdu_tx_enable as u64, &mut i);
-        write_rpc_var(buf, 11, v, c.nvs_enable as u64, &mut i);
-        write_rpc_var(buf, 12, v, c.nano_enable as u64, &mut i);
-        write_rpc_var(buf, 13, v, c.rx_ba_win as u64, &mut i);
-        write_rpc_var(buf, 14, v, c.wifi_task_core_id as u64, &mut i);
-        write_rpc_var(buf, 15, v, c.beacon_max_len as u64, &mut i);
-        write_rpc_var(buf, 16, v, c.mgmt_sbuf_num as u64, &mut i);
-        write_rpc_var(buf, 17, v, c.feature_caps, &mut i);
-        write_rpc_var(buf, 18, v, c.sta_disconnected_pm as u64, &mut i);
-        write_rpc_var(buf, 19, v, c.espnow_max_encrypt_num as u64, &mut i);
-        write_rpc_var(buf, 20, v, c.magic as u64, &mut i);
+        write_rpc(buf, 1, v, c.static_rx_buf_num as u64, &mut i);
+        write_rpc(buf, 2, v, c.dynamic_rx_buf_num as u64, &mut i);
+        write_rpc(buf, 3, v, c.tx_buf_type as u64, &mut i);
+        write_rpc(buf, 4, v, c.static_tx_buf_num as u64, &mut i);
+        write_rpc(buf, 5, v, c.dynamic_tx_buf_num as u64, &mut i);
+        write_rpc(buf, 6, v, c.cache_tx_buf_num as u64, &mut i);
+        write_rpc(buf, 7, v, c.csi_enable as u64, &mut i);
+        write_rpc(buf, 8, v, c.ampdu_rx_enable as u64, &mut i);
+        write_rpc(buf, 9, v, c.ampdu_tx_enable as u64, &mut i);
+        write_rpc(buf, 10, v, c.amsdu_tx_enable as u64, &mut i);
+        write_rpc(buf, 11, v, c.nvs_enable as u64, &mut i);
+        write_rpc(buf, 12, v, c.nano_enable as u64, &mut i);
+        write_rpc(buf, 13, v, c.rx_ba_win as u64, &mut i);
+        write_rpc(buf, 14, v, c.wifi_task_core_id as u64, &mut i);
+        write_rpc(buf, 15, v, c.beacon_max_len as u64, &mut i);
+        write_rpc(buf, 16, v, c.mgmt_sbuf_num as u64, &mut i);
+        write_rpc(buf, 17, v, c.feature_caps, &mut i);
+        write_rpc(buf, 18, v, c.sta_disconnected_pm as u64, &mut i);
+        write_rpc(buf, 19, v, c.espnow_max_encrypt_num as u64, &mut i);
+        write_rpc(buf, 20, v, c.magic as u64, &mut i);
 
         i
     }
@@ -388,6 +389,10 @@ pub struct WifiScanConfig {
     pub scan_time: WifiScanTime,
     pub home_chan_dwell_time: u32,
 }
+
+// impl WifiScanConfig {
+//     pub fn to
+// }
 
 // ---------- WiFi HE AP Info ----------
 #[derive(Format)]
@@ -548,8 +553,8 @@ impl RpcReqConfigHeartbeat {
     pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
         let mut i = 0;
 
-        write_rpc_var(buf, 1, WireType::Varint, self.enable as u64, &mut i);
-        write_rpc_var(buf, 2, WireType::Varint, self.duration as u64, &mut i);
+        write_rpc(buf, 1, WireType::Varint, self.enable as u64, &mut i);
+        write_rpc(buf, 2, WireType::Varint, self.duration as u64, &mut i);
 
         i
     }
@@ -578,7 +583,7 @@ impl RpcReqWifiInit {
         println!("Wifi init cfg len: {:?}", cfg_len);
 
         let mut i = 0;
-        write_rpc_var(buf, 1, WireType::Len, cfg_len as u64, &mut i);
+        write_rpc(buf, 1, WireType::Len, cfg_len as u64, &mut i);
 
         buf[i..i + cfg_len].copy_from_slice(&buf_init_cfg[..cfg_len]);
         i += cfg_len;
@@ -664,6 +669,18 @@ pub struct RpcReqWifiScanStart {
     pub block: bool,
     pub config_set: i32,
 }
+
+// impl RpcReqWifiScanStart {
+//     impl RpcReqWifiScanStart {
+//         pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+//             let mut i = 0;
+//
+//             write_rpc(buf, 1, Len, config_len as u64, &mut i);
+//
+//             i
+//         }
+//     }
+// }
 
 #[derive(Format)]
 pub struct RpcRespWifiScanStart {

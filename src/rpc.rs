@@ -3,16 +3,12 @@
 //! concepts, and ones specific to the RPC used by esp-hosted-mcu.
 
 use defmt::{Format, println};
+use micropb::{MessageEncode, PbEncoder};
 use num_enum::TryFromPrimitive;
 
-use crate::{
-    EspError,
-    header::build_frame,
-    proto_data::RpcId,
-    transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
-};
+use crate::{EspError, header::build_frame, proto_data::RpcId, transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP}, RpcP};
 
-const MAX_RPC_SIZE: usize = 100; // todo temp.
+pub(crate) const MAX_RPC_SIZE: usize = 300;
 pub(crate) const RPC_MIN_SIZE: usize = 10;
 
 
@@ -44,14 +40,14 @@ impl Rpc {
         let data_len = data.len();
 
         // todo: Is this the right wire type? (All fields)
-        write_rpc_var(buf, 1, WireType::Varint, self.msg_type as u64, &mut i);
-        write_rpc_var(buf, 2, WireType::Varint, self.msg_id as u64, &mut i);
-        write_rpc_var(buf, 3, WireType::Varint, self.uid as u64, &mut i);
+        write_rpc(buf, 1, WireType::Varint, self.msg_type as u64, &mut i);
+        write_rpc(buf, 2, WireType::Varint, self.msg_id as u64, &mut i);
+        write_rpc(buf, 3, WireType::Varint, self.uid as u64, &mut i);
 
         // We repeat the message id as the payload's tag field.
         // Note: When using length-determined, we must follow the tag with a varint len.
 
-        write_rpc_var(
+        write_rpc(
             buf,
             self.msg_id as u16,
             WireType::Len,
@@ -210,15 +206,25 @@ pub fn setup_rpc(frame: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
 
     i += rpc.to_bytes(&mut rpc_buf, data);
 
-    println!("RPC len: {}", i);
-    println!("RPC buf: {:?}", &rpc_buf[..i]);
+    // println!("RPC len: {}", i);
+    // println!("RPC buf: {:?}", &rpc_buf[..i]);
 
     build_frame(frame, &rpc_buf[..i])
 }
 
+/// Sets up an RPC command using the direct protbuffer decoding.
+pub fn setup_rpc_proto(frame: &mut [u8], message: &RpcP) -> usize {
+    let mut rpc_buf = micropb::heapless::Vec::<u8, MAX_RPC_SIZE>::new();
+
+    let mut encoder = PbEncoder::new(&mut rpc_buf);
+    message.encode(&mut encoder).unwrap();
+
+    build_frame(frame, &rpc_buf[..message.compute_size()])
+}
+
 /// Handles making tags, and encoding as varints. Increments the index.
 /// todo: Consider here, and `encode_varint`, using u32 vice u64.
-pub(crate) fn write_rpc_var(
+pub(crate) fn write_rpc(
     buf: &mut [u8],
     field: u16,
     wire_type: WireType,

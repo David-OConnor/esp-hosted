@@ -11,7 +11,7 @@ pub mod rf;
 mod rpc;
 mod transport;
 
-// mod esp_hosted_proto;
+mod esp_hosted_proto;
 
 use micropb::{MessageDecode, MessageEncode, PbDecoder, PbEncoder};
 
@@ -26,11 +26,12 @@ use num_enum::TryFromPrimitive;
 pub use proto_data::*;
 pub use rf::*;
 
-// use esp_hosted_proto::Rpc as Rpc_;
+pub use esp_hosted_proto::Rpc as RpcP;
+pub use esp_hosted_proto::*;
 
 pub use crate::header::HEADER_SIZE;
 use crate::{
-    header::{PL_HEADER_SIZE, TLV_SIZE},
+    header::{PL_HEADER_SIZE},
     proto_data::RpcId,
     rpc::{RPC_MIN_SIZE, Rpc, setup_rpc},
 };
@@ -97,13 +98,13 @@ pub fn cfg_heartbeat_pl(buf: &mut [u8], uid: u32, cfg: &RpcReqConfigHeartbeat) -
     frame_len
 }
 
-pub fn cfg_heartbeat<W>(mut write: W, cfg: &RpcReqConfigHeartbeat) -> Result<(), EspError>
+pub fn cfg_heartbeat<W>(mut write: W, cfg: &RpcReqConfigHeartbeat, uid: u32) -> Result<(), EspError>
 // todo: Typedef this if able.
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
     unsafe {
-        let frame_len = cfg_heartbeat_pl(&mut TX_BUF, 0, cfg);
+        let frame_len = cfg_heartbeat_pl(&mut TX_BUF, uid, cfg);
         write(&TX_BUF[..frame_len])?;
     }
 
@@ -112,7 +113,7 @@ where
 
 /// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
 /// the whole message received.
-pub fn parse_msg(buf: &[u8]) -> Result<(PayloadHeader, Rpc, &[u8]), EspError> {
+pub fn parse_msg(buf: &[u8]) -> Result<(PayloadHeader, Rpc, &[u8], RpcP), EspError> {
     let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE]);
     let total_size = header.len as usize + PL_HEADER_SIZE;
 
@@ -122,27 +123,17 @@ pub fn parse_msg(buf: &[u8]) -> Result<(PayloadHeader, Rpc, &[u8]), EspError> {
 
     let rpc_buf = &buf[HEADER_SIZE..total_size];
 
-    println!("RPC BUF rx: {:?}", rpc_buf);
+    // println!("RPC BUF rx: {:?}", rpc_buf);
 
     let (rpc, data_start_i, data_len_rpc) = Rpc::from_bytes(rpc_buf)?;
 
-    // todo: Experimenting.
-    // let mut decoder = PbDecoder::new(rpc_buf);
+    // Parsing the proto data directly.
+    let mut decoder = PbDecoder::new(rpc_buf);
 
-    // let mut rpc_decoded = Rpc_::default();
-    // rpc_decoded.decode(&mut decoder, rpc_buf.len()).unwrap();
-    // println!("Decoded: {:?}", rpc_decoded);
-
-    // println!("DSI: {:?}", data_start_i);
-    // let data_len_from_header = total_size - (HEADER_SIZE + data_start_i);
-
-    // if data_len_from_header != data_len_rpc {
-    //     // todo: Rem this print
-    //     println!("Len from header: {:?} from rpc: {}", data_len_from_header, data_len_rpc);
-    //     return Err(EspError::InvalidData);
-    // }
+    let mut rpc_proto = RpcP::default();
+    rpc_proto.decode(&mut decoder, rpc_buf.len()).map_err(|_| EspError::InvalidData)?;
 
     let data_buf = &rpc_buf[data_start_i..];
 
-    Ok((header, rpc, &data_buf))
+    Ok((header, rpc, &data_buf, rpc_proto))
 }

@@ -57,7 +57,7 @@ name = "esp-hosted"
 version = "0.1.0"
 dependencies = [
  "defmt",
- "heapless",
+ "heapless 0.9.0",
  "micropb",
  "num_enum",
 ]
@@ -82,12 +82,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "heapless"
+version = "0.9.0"
+source = "git+https://github.com/rust-embedded/heapless#6b177671905c6dfa5c6b5f735c59e132d4591948"
+dependencies = [
+ "defmt",
+ "hash32",
+ "stable_deref_trait",
+]
+
+[[package]]
 name = "micropb"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ba09f41c6f3b050685bcf41004ddf7a3ac48ecb4f456f301dbe14c0d4455d89"
 dependencies = [
- "heapless",
+ "heapless 0.8.0",
  "num-traits",
 ]
 
