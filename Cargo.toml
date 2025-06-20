@@ -20,9 +20,9 @@ exclude = [".gitignore"]
 [dependencies]
 defmt = "1.0.1"
 
-#heapless = "0.8.0"
+heapless = "0.8.0"
 #heapless = { version = "0.8.0", features=["defmt"] }
-heapless = { git = "https://github.com/rust-embedded/heapless", features=["defmt"] }
+#heapless = { git = "https://github.com/rust-embedded/heapless", features=["defmt"] }
 
 num_enum = { version = "0.7.3", default-features = false }
 

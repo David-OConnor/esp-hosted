@@ -134,7 +134,7 @@ where
 }
 
 // pub fn wifi_scan_start<W>(mut write: W, uid: u32, cfg: &RpcReqWifiScanStart) -> Result<(), EspError>
-pub fn wifi_scan_start<W>(mut write: W, uid: u32, scan_start: Rpc_Req_WifiScanStart) -> Result<(), EspError>
+pub fn _wifi_scan_start_proto<W>(mut write: W, uid: u32, scan_start: Rpc_Req_WifiScanStart) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
@@ -145,17 +145,35 @@ where
 
 
     // todo: Move to a helper fn that accepts Rpc(P)
+    //
+    // let mut message = RpcP::default();
+    //
+    // message.set_msg_type(RpcType::Req);
+    // message.set_msg_id(RpcIdP::ReqWifiScanStart);
+    // message.set_uid(uid);
+    //
+    // message.payload = Some(Rpc_::Payload::ReqWifiScanStart(scan_start));
+    //
+    // unsafe {
+    //     let frame_len = setup_rpc_proto(&mut TX_BUF, &message);
+    //     write(&TX_BUF[..frame_len])?;
+    // }
 
-    let mut message = RpcP::default();
+    Ok(())
+}
 
-    message.set_msg_type(RpcType::Req);
-    message.set_msg_id(RpcIdP::ReqWifiScanStart);
-    message.set_uid(uid);
+pub fn wifi_scan_start<W>(mut write: W, uid: u32, scan_start: &RpcReqWifiScanStart) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    let rpc = Rpc::new_req(RpcId::ReqWifiScanStart, uid);
 
-    message.payload = Some(Rpc_::Payload::ReqWifiScanStart(scan_start));
+    let mut data = [0; 100];
+
+    let data_size = scan_start.to_bytes(&mut data);
 
     unsafe {
-        let frame_len = setup_rpc_proto(&mut TX_BUF, &message);
+        let frame_len = setup_rpc(&mut TX_BUF, &rpc, &data[..data_size]);
         write(&TX_BUF[..frame_len])?;
     }
 

@@ -9,6 +9,7 @@ use num_enum::TryFromPrimitive;
 use crate::{EspError, header::build_frame, proto_data::RpcId, transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP}, RpcP};
 
 pub(crate) const MAX_RPC_SIZE: usize = 300;
+// pub(crate) const MAX_RPC_SIZE: usize = 100;
 pub(crate) const RPC_MIN_SIZE: usize = 10;
 
 
@@ -219,7 +220,11 @@ pub fn setup_rpc_proto(frame: &mut [u8], message: &RpcP) -> usize {
     let mut encoder = PbEncoder::new(&mut rpc_buf);
     message.encode(&mut encoder).unwrap();
 
-    build_frame(frame, &rpc_buf[..message.compute_size()])
+    let i = build_frame(frame, &rpc_buf[..message.compute_size()]);
+
+    println!("Built frame from micropb: {:?}", frame);
+
+    i
 }
 
 /// Handles making tags, and encoding as varints. Increments the index.

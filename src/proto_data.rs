@@ -365,34 +365,97 @@ pub struct WifiCountry {
 }
 
 // ---------- WiFi Active Scan Time ----------
-#[derive(Format)]
+#[derive(Default, Format)]
 pub struct WifiActiveScanTime {
+    /// 0 means use built-ins.
     pub min: u32,
     pub max: u32,
 }
 
+impl WifiActiveScanTime {
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        write_rpc(buf, 1, Varint, self.min as u64, &mut i);
+        write_rpc(buf, 2, Varint, self.max as u64, &mut i);
+
+        i
+    }
+}
+
 // ---------- WiFi Scan Time ----------
-// #[derive(Format)]
+// #[derive(Default, Format)]
+#[derive(Default)]
 pub struct WifiScanTime {
     pub active: WifiActiveScanTime,
+    /// 0 means use default of 360ms.
     pub passive: u32,
 }
 
+impl WifiScanTime {
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        // todo size?
+        let mut scan_time_buf = [0; 6];
+        let active_size = self.active.to_bytes(&mut scan_time_buf);
+
+        write_rpc(buf, 1, Len, active_size as u64, &mut i);
+        buf[i..i + active_size].copy_from_slice(&scan_time_buf[..active_size]);
+        i += active_size;
+
+        write_rpc(buf, 2, Varint, self.passive as u64, &mut i);
+
+        i
+    }
+}
+
+
 // ---------- WiFi Scan Config ----------
-// #[derive(Format)]
+// #[derive(Default, Format)]
+#[derive(Default)]
 pub struct WifiScanConfig {
+    /// Can limit to a specific SSID or MAC. Empty means no filter.
     pub ssid: Vec<u8, 30>,
     pub bssid: Vec<u8, 30>,
+    /// 0 means no filter.
     pub channel: u32,
     pub show_hidden: bool,
+    /// 0 means active. 1 is passive. 2 is follow.
     pub scan_type: i32,
     pub scan_time: WifiScanTime,
     pub home_chan_dwell_time: u32,
 }
 
-// impl WifiScanConfig {
-//     pub fn to
-// }
+impl WifiScanConfig {
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        write_rpc(buf, 1, Len, self.ssid.len() as u64, &mut i);
+        buf.copy_from_slice(&self.ssid);
+        i += self.ssid.len();
+
+        write_rpc(buf, 2, Len, self.bssid.len() as u64, &mut i);
+        buf.copy_from_slice(&self.bssid);
+        i += self.bssid.len();
+
+        write_rpc(buf, 3, Varint, self.channel as u64, &mut i);
+        write_rpc(buf, 4, Varint, self.show_hidden as u64, &mut i);
+        write_rpc(buf, 5, Varint, self.scan_type as u64, &mut i);
+
+        // todo size?
+        let mut scan_time_buf = [0; 8];
+        let scan_time_size = self.scan_time.to_bytes(&mut scan_time_buf);
+
+        write_rpc(buf, 6, Len, scan_time_size as u64, &mut i);
+        buf[i..i + scan_time_size].copy_from_slice(&scan_time_buf[..scan_time_size]);
+        i += scan_time_size;
+
+        write_rpc(buf, 7, Varint, self.home_chan_dwell_time as u64, &mut i);
+
+        i
+    }
+}
 
 // ---------- WiFi HE AP Info ----------
 #[derive(Format)]
@@ -663,24 +726,37 @@ pub struct RpcRespWifiStop {
 }
 
 // ---------- WiFi Scanning ----------
-// #[derive(Format)]
+// #[derive(Default, Format)]
+#[derive(Default)]
 pub struct RpcReqWifiScanStart {
     pub config: WifiScanConfig,
+    /// true → RPC blocks until scan complete; false → returns immediately and you wait for
+    /// WIFI_SCAN_DONE then pull the list.
     pub block: bool,
+    /// Bit-mask telling the firmware how much of config you’re sending. 1 means “use everything
+    /// in config once”. Leave 0 if you previously uploaded a config and just want to trigger another scan.
     pub config_set: i32,
 }
 
-// impl RpcReqWifiScanStart {
-//     impl RpcReqWifiScanStart {
-//         pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-//             let mut i = 0;
-//
-//             write_rpc(buf, 1, Len, config_len as u64, &mut i);
-//
-//             i
-//         }
-//     }
-// }
+impl RpcReqWifiScanStart {
+    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
+        let mut i = 0;
+
+        let mut cfg_buf = [0; 80]; // todo: Experiment.
+        let cfg_len = self.config.to_bytes(&mut cfg_buf);
+
+        println!("Scan cfg len: {:?}", cfg_len); // todo: Use to set buf appropriately.
+
+        write_rpc(buf, 1, Len, cfg_len as u64, &mut i);
+        buf[i..i + cfg_len].copy_from_slice(&cfg_buf[..cfg_len]);
+        i += cfg_len;
+
+        write_rpc(buf, 2, Varint, self.block as u64, &mut i);
+        write_rpc(buf, 3, Varint, self.config_set as u64, &mut i);
+
+        i
+    }
+}
 
 #[derive(Format)]
 pub struct RpcRespWifiScanStart {

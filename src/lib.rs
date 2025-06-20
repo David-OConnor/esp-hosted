@@ -114,7 +114,7 @@ where
 /// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
 /// the whole message received.
 pub fn parse_msg(buf: &[u8]) -> Result<(PayloadHeader, Rpc, &[u8], RpcP), EspError> {
-    let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE]);
+    let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE])?;
     let total_size = header.len as usize + PL_HEADER_SIZE;
 
     if total_size > buf.len() {
