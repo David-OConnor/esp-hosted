@@ -3,8 +3,8 @@ For connecting to an [ESP-Hosted-MCU](https://github.com/espressif/esp-hosted-mc
 written in rust.
 
 Compatible with ESP-Hosted-MCU 2.0.6, and any host MCU and architecture. For details on ESP-HOSTED-MCU's protocol see
-[this document](/esp_hosted_protocol.md). For how to use the commands in the library effectively, reference the 
-- [ESP32 IDF programming guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/index.html)
+[this document](/esp_hosted_protocol.md). For how to use the commands in the library effectively, reference the
+[ESP32 IDF programming guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/index.html)
 
 This library includes two approaches: A high-level API using data structures from this library, and full access to 
 the native protobuf structures. The native API is easier to work with, but only implements a small portation of functionality.
@@ -12,7 +12,7 @@ The protobuf API is complete, but more cumbersome.
 
 Example use:
 ```rust
-fn init(uart: &mut Uart) {
+fn init(buf: &mut [u8], uart: &mut Uart) {
     // Write could also be SPI, dma etc.
     let mut write = |buf: &[u8]| {
         uart.write(buf).map_err(|e| {
@@ -26,7 +26,7 @@ fn init(uart: &mut Uart) {
         duration: 10,
     };
 
-    esp_hosted::cfg_heartbeat(&mut write, &heartbeat_cfg).is_err()?;
+    esp_hosted::cfg_heartbeat(buf, &mut write, &heartbeat_cfg).is_err()?;
 }
 ```
 
@@ -67,7 +67,7 @@ an example, using the same heartbeat config as above. This is more verbose than 
 ```rust
     use esp_hosted::{RpcP, RpcTypeP, RpcIdP, Rpc_};
 
-    fn init(uart: &mut Uart) {
+    fn init(buf: &mut [u8], uart: &mut Uart) {
         // let write = ... (Same as above)
         
         let mut hb_msg = RpcP::default();
@@ -81,7 +81,7 @@ an example, using the same heartbeat config as above. This is more verbose than 
 
         hb_msg.payload = Some(Rpc_::Payload::ReqConfigHeartbeat(hb_cfg));
 
-        esp_hosted::write_rpc_proto(&mut write, hb_msg)?;
+        esp_hosted::write_rpc_proto(buf, &mut write, hb_msg)?;
     }
 ```
 

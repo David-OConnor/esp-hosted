@@ -14,25 +14,22 @@ repository = "https://github.com/David-OConnor/esp-hosted"
 documentation = "https://docs.rs/esp_hosted"
 readme = "README.md"
 license = "MIT"
-#exclude = [".gitignore"]
+
+# This config is required to allow `esp_hosted_proto.rs`, without including it in the repo.
+include = [
+    "src/**",
+    "src/esp_hosted_proto.rs",
+    "Cargo.toml",
+    "README.md",
+    "rustfmt.toml",
+]
 
 
 [dependencies]
 defmt = "1.0.1"
 
 heapless = "0.8.0"
-#heapless = { version = "0.8.0", features=["defmt"] }
-#heapless = { git = "https://github.com/rust-embedded/heapless", features=["defmt"] }
+#heapless = { version = "0.9.0", features=["defmt"] }
 
 num_enum = { version = "0.7.3", default-features = false }
-
-#hal = { package = "stm32-hal2", version = "1.9.4", features = ["g431"]}
-
 micropb = { version = "0.3.0", features = ["container-heapless"] }
-
-
-# todo: Allow different features for other MCUs.
-#[features]
-#hal = ["hal/g431"]
-
-

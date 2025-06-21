@@ -7,11 +7,15 @@ use heapless::Vec;
 use micropb::{MessageEncode, PbEncoder};
 use num_enum::TryFromPrimitive;
 
-use crate::{EspError, header::build_frame, proto_data::RpcId, transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP}, RpcP, TX_BUF};
+use crate::{
+    EspError, RpcP,
+    header::build_frame,
+    proto_data::RpcId,
+    transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
+};
 
 pub(crate) const MAX_RPC_SIZE: usize = 300;
 pub(crate) const RPC_MIN_SIZE: usize = 10;
-
 
 // todo: Soruce?
 #[derive(Clone, Copy, Format)]
@@ -19,6 +23,8 @@ pub(crate) const RPC_MIN_SIZE: usize = 10;
 pub enum InterfaceType {
     Station = 0,
     Ap = 1,
+    // todo??
+    // Station = 2
 }
 
 /// See `esp_hosted_rpc.proto`.
@@ -48,7 +54,6 @@ impl Rpc {
         let mut i = 0;
         let data_len = data.len();
 
-        // todo: Is this the right wire type? (All fields)
         write_rpc(buf, 1, WireType::Varint, self.msg_type as u64, &mut i);
         write_rpc(buf, 2, WireType::Varint, self.msg_id as u64, &mut i);
         write_rpc(buf, 3, WireType::Varint, self.uid as u64, &mut i);
@@ -72,6 +77,7 @@ impl Rpc {
 
     /// Returns (Self, data start i, data len expected).
     pub fn from_bytes(buf: &[u8]) -> Result<(Self, usize, usize), EspError> {
+        // Skipping msg type tag at byte 0.
         let msg_type = buf[1].try_into().map_err(|e| EspError::InvalidData)?;
 
         let (rpc_id, rpc_id_size) = decode_varint(&buf[3..])?;
@@ -79,18 +85,23 @@ impl Rpc {
             .try_into()
             .map_err(|e| EspError::InvalidData)?;
 
-        // We are skipping the UID tag; hence the jump from 3 to 4.
-        let mut i = 4 + rpc_id_size;
+        let mut i = 3 + rpc_id_size;
 
-        let (uid, uid_size) = decode_varint(&buf[i..])?;
-        i += uid_size;
+        let mut uid = 0; // Default if the UID is missing. We observe this for events.
+        // This is a bit fragile, but works for now.
+        if buf[3 + rpc_id_size] == 16 {
+            i += 1; // Skip the tag.
+            let (uid_, uid_size) = decode_varint(&buf[i..])?;
+            uid = uid_;
+            i += uid_size;
+            // UID present
+        }
 
         let result = Self {
             msg_type,
             msg_id,
             uid: uid as u32,
         };
-
 
         let (_data_tag, data_tag_size) = decode_varint(&buf[i..])?;
         i += data_tag_size;
@@ -204,61 +215,48 @@ impl RpcEndpoint {
     }
 }
 
-/// Sets up an RPC command. This makes calls to set up payload header and TLV.
+/// Sets up an RPC command to write. This makes calls to set up payload header and TLV.
 /// returns the total payload size after setup. (Including PL header, TLV, RPC). This function is mainly
 /// used internally by our higher-level API.
-pub fn setup_rpc(frame: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
+pub fn setup_rpc(buf: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
     // todo: I don't like how we need to specify another size constraint here, in addition to the frame buf.
     let mut rpc_buf = [0; MAX_RPC_SIZE];
 
     let mut i = 0;
     i += rpc.to_bytes(&mut rpc_buf, data);
 
-    build_frame(frame, &rpc_buf[..i])
+    build_frame(buf, &rpc_buf[..i])
 }
 
-/// Sets up an RPC command using the direct protbuffer decoding. This is flexible, and allows writing
-/// arbitrary commands.
-pub fn setup_rpc_proto(frame: &mut [u8], message: RpcP) -> usize {
+/// Sets up an RPC command to write using the automatic protbuf decoding from micropb. This is flexible, and
+/// allows writing arbitrary commands, but its interface isn't as streamlined as our native impl.
+pub fn setup_rpc_proto(buf: &mut [u8], message: RpcP) -> usize {
     let mut rpc_buf = Vec::<u8, MAX_RPC_SIZE>::new();
 
     let mut encoder = PbEncoder::new(&mut rpc_buf);
     message.encode(&mut encoder).unwrap();
 
-    let i = build_frame(frame, &rpc_buf[..message.compute_size()]);
-
-    println!("RCP data from .proto: {:?}", &rpc_buf[..message.compute_size()]);
-
-    i
+    build_frame(buf, &rpc_buf[..message.compute_size()])
 }
 
-// todo: Experimenting with using the proto directly.
-pub fn write_rpc_proto<W>(mut write: W, msg: RpcP) -> Result<(), EspError>
+/// Write an automatically-decoded protobuf message directly.
+pub fn write_rpc_proto<W>(buf: &mut [u8], mut write: W, msg: RpcP) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
-    unsafe {
-        let frame_len = setup_rpc_proto(&mut TX_BUF, msg);
-        write(&TX_BUF[..frame_len])?;
-    }
+    let frame_len = setup_rpc_proto(buf, msg);
+    write(&buf[..frame_len])?;
 
     Ok(())
 }
 
 /// Handles making tags, and encoding as varints. Increments the index.
 /// todo: Consider here, and `encode_varint`, using u32 vice u64.
-pub(crate) fn write_rpc(
-    buf: &mut [u8],
-    field: u16,
-    wire_type: WireType,
-    val: u64,
-    i: &mut usize,
-) {
+pub(crate) fn write_rpc(buf: &mut [u8], field: u16, wire_type: WireType, val: u64, i: &mut usize) {
     let tag = make_tag(field, wire_type);
     *i += encode_varint(tag as u64, &mut buf[*i..]);
     *i += encode_varint(val, &mut buf[*i..]);
 }
-
 
 /// Used in a few places when setting up RPC.
 pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u16 {

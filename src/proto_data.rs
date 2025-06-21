@@ -4,12 +4,15 @@
 //! definitions for the data types [de]serialized. They're not automatically generated
 //! from the .proto file, and are used in our higher-level API.
 
-use defmt::{println, Format};
+use defmt::{Format, println};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
 
-use crate::rpc::{WireType, write_rpc};
-use crate::rpc::WireType::{Len, Varint};
+use crate::rpc::{
+    WireType,
+    WireType::{Len, Varint},
+    write_rpc,
+};
 
 const MAX_DATA_SIZE: usize = 300; // todo temp
 
@@ -413,7 +416,6 @@ impl WifiScanTime {
     }
 }
 
-
 // ---------- WiFi Scan Config ----------
 // #[derive(Default, Format)]
 #[derive(Default)]
@@ -611,7 +613,7 @@ pub struct RpcRespWifiGetMaxTxPower {
 #[derive(Format)]
 pub struct RpcReqConfigHeartbeat {
     pub enable: bool,
-    /// It appears that this is in intervals of 10s.
+    /// In seconds. Min of 10.
     pub duration: i32,
 }
 

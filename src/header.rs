@@ -6,7 +6,11 @@ use core::sync::atomic::{AtomicU16, Ordering};
 use defmt::Format;
 use num_enum::TryFromPrimitive;
 
-use crate::{copy_le, parse_le, rpc::{EndpointType, RpcEndpoint}, transport::{PacketType, RPC_EP_NAME_RSP, compute_checksum}, EspError};
+use crate::{
+    EspError, copy_le, parse_le,
+    rpc::{EndpointType, RpcEndpoint},
+    transport::{PacketType, RPC_EP_NAME_RSP, compute_checksum},
+};
 
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
 
@@ -122,7 +126,9 @@ impl PayloadHeader {
 
     /// Parse from a 12-byte slice (will panic if `buf.len() < 12` or slice-to-array fails)
     pub fn from_bytes(buf: &[u8]) -> Result<Self, EspError> {
-        let if_type = (buf[0] & 0x0F).try_into().map_err(|_| EspError::InvalidData)?;
+        let if_type = (buf[0] & 0x0F)
+            .try_into()
+            .map_err(|_| EspError::InvalidData)?;
         let if_num = (buf[0] >> 4) & 0x0F;
         let flags = buf[1];
 
