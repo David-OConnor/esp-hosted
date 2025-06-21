@@ -122,7 +122,7 @@ impl PayloadHeader {
 
     /// Parse from a 12-byte slice (will panic if `buf.len() < 12` or slice-to-array fails)
     pub fn from_bytes(buf: &[u8]) -> Result<Self, EspError> {
-        let if_type = (buf[0] & 0x0F).try_into().unwrap();
+        let if_type = (buf[0] & 0x0F).try_into().map_err(|_| EspError::InvalidData)?;
         let if_num = (buf[0] >> 4) & 0x0F;
         let flags = buf[1];
 

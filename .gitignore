@@ -1,7 +1,8 @@
 /.idea
-*/target
+/target
 Cargo.lock
 
 *.proto
 
 */esp_hosted_proto.rs
+build_proto/target

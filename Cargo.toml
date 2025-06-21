@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["David O'Connor <the_alchemist@fastmail.com>"]
 description = "Support for the ESP-Hosted firmware, with an STM32 host."
-keywords = ["esp", "stm32", "esp-hosted", "wifi", "ble"]
+keywords = ["esp32", "stm32", "esp-hosted", "wifi", "ble"]
 categories = [
     "embedded",
     "hardware-support",

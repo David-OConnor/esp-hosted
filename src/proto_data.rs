@@ -1,5 +1,8 @@
+#![allow(unused)]
+
 //! Contains data types specific to the ESP-Hosted-MCU proto buffer. This contains
-//! definitions for the data types [de]serialized.
+//! definitions for the data types [de]serialized. They're not automatically generated
+//! from the .proto file, and are used in our higher-level API.
 
 use defmt::{println, Format};
 use heapless::Vec;
@@ -8,7 +11,7 @@ use num_enum::TryFromPrimitive;
 use crate::rpc::{WireType, write_rpc};
 use crate::rpc::WireType::{Len, Varint};
 
-const MAX_DATA_SIZE: usize = 1000; // todo temp
+const MAX_DATA_SIZE: usize = 300; // todo temp
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u16)]
@@ -432,11 +435,11 @@ impl WifiScanConfig {
         let mut i = 0;
 
         write_rpc(buf, 1, Len, self.ssid.len() as u64, &mut i);
-        buf.copy_from_slice(&self.ssid);
+        buf[i..i + self.ssid.len()].copy_from_slice(&self.ssid);
         i += self.ssid.len();
 
         write_rpc(buf, 2, Len, self.bssid.len() as u64, &mut i);
-        buf.copy_from_slice(&self.bssid);
+        buf[i..i + self.bssid.len()].copy_from_slice(&self.bssid);
         i += self.bssid.len();
 
         write_rpc(buf, 3, Varint, self.channel as u64, &mut i);
@@ -742,7 +745,7 @@ impl RpcReqWifiScanStart {
     pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
         let mut i = 0;
 
-        let mut cfg_buf = [0; 80]; // todo: Experiment.
+        let mut cfg_buf = [0; 50]; // ~22 with defaults.
         let cfg_len = self.config.to_bytes(&mut cfg_buf);
 
         println!("Scan cfg len: {:?}", cfg_len); // todo: Use to set buf appropriately.

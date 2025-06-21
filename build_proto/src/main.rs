@@ -12,7 +12,6 @@ fn main() {
     // STA list – allow up to eight entries
     gen_.configure(".wifi_sta_list.sta", Config::new().max_len(50));
 
-    // .encode_decode(EncodeDecode::Both)
     // .configure(
     //     ".",
     //     Config::new()

@@ -3,15 +3,23 @@
 //! concepts, and ones specific to the RPC used by esp-hosted-mcu.
 
 use defmt::{Format, println};
+use heapless::Vec;
 use micropb::{MessageEncode, PbEncoder};
 use num_enum::TryFromPrimitive;
 
-use crate::{EspError, header::build_frame, proto_data::RpcId, transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP}, RpcP};
+use crate::{EspError, header::build_frame, proto_data::RpcId, transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP}, RpcP, TX_BUF};
 
 pub(crate) const MAX_RPC_SIZE: usize = 300;
-// pub(crate) const MAX_RPC_SIZE: usize = 100;
 pub(crate) const RPC_MIN_SIZE: usize = 10;
 
+
+// todo: Soruce?
+#[derive(Clone, Copy, Format)]
+#[repr(u8)]
+pub enum InterfaceType {
+    Station = 0,
+    Ap = 1,
+}
 
 /// See `esp_hosted_rpc.proto`.
 #[derive(Format)]
@@ -187,9 +195,9 @@ pub(crate) enum RpcEndpoint {
 impl RpcEndpoint {
     pub fn as_bytes(&self) -> &'static [u8] {
         match self {
-            /// Host only sends this.
+            // Host only sends this.
             Self::CtrlResp => RPC_EP_NAME_RSP,
-            /// Slave sends either.
+            // Slave sends either.
             Self::CtrlEvent => RPC_EP_NAME_EVT,
         }
         .as_bytes()
@@ -197,34 +205,44 @@ impl RpcEndpoint {
 }
 
 /// Sets up an RPC command. This makes calls to set up payload header and TLV.
-/// returns the total payload size after setup. (Including PL header, TLV, RPC).
-// pub fn setup_rpc(frame: &mut [u8], rpc_hdr: &RpcHeader, data: &[u8]) -> usize {
+/// returns the total payload size after setup. (Including PL header, TLV, RPC). This function is mainly
+/// used internally by our higher-level API.
 pub fn setup_rpc(frame: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
     // todo: I don't like how we need to specify another size constraint here, in addition to the frame buf.
     let mut rpc_buf = [0; MAX_RPC_SIZE];
 
     let mut i = 0;
-
     i += rpc.to_bytes(&mut rpc_buf, data);
-
-    // println!("RPC len: {}", i);
-    // println!("RPC buf: {:?}", &rpc_buf[..i]);
 
     build_frame(frame, &rpc_buf[..i])
 }
 
-/// Sets up an RPC command using the direct protbuffer decoding.
-pub fn setup_rpc_proto(frame: &mut [u8], message: &RpcP) -> usize {
-    let mut rpc_buf = micropb::heapless::Vec::<u8, MAX_RPC_SIZE>::new();
+/// Sets up an RPC command using the direct protbuffer decoding. This is flexible, and allows writing
+/// arbitrary commands.
+pub fn setup_rpc_proto(frame: &mut [u8], message: RpcP) -> usize {
+    let mut rpc_buf = Vec::<u8, MAX_RPC_SIZE>::new();
 
     let mut encoder = PbEncoder::new(&mut rpc_buf);
     message.encode(&mut encoder).unwrap();
 
     let i = build_frame(frame, &rpc_buf[..message.compute_size()]);
 
-    println!("Built frame from micropb: {:?}", frame);
+    println!("RCP data from .proto: {:?}", &rpc_buf[..message.compute_size()]);
 
     i
+}
+
+// todo: Experimenting with using the proto directly.
+pub fn write_rpc_proto<W>(mut write: W, msg: RpcP) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    unsafe {
+        let frame_len = setup_rpc_proto(&mut TX_BUF, msg);
+        write(&TX_BUF[..frame_len])?;
+    }
+
+    Ok(())
 }
 
 /// Handles making tags, and encoding as varints. Increments the index.
