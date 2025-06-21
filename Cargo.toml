@@ -14,7 +14,7 @@ repository = "https://github.com/David-OConnor/esp-hosted"
 documentation = "https://docs.rs/esp_hosted"
 readme = "README.md"
 license = "MIT"
-exclude = [".gitignore"]
+#exclude = [".gitignore"]
 
 
 [dependencies]
