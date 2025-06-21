@@ -2,12 +2,9 @@
 
 use defmt::{Format};
 use heapless::{String, Vec};
-use crate::{EspError, RpcReqWifiInit, TX_BUF, WifiInitConfig, proto_data::RpcId, rpc::{Rpc, setup_rpc}, Rpc_Req_WifiScanStart, RpcReqWifiScanStart};
+use crate::{EspError, RpcReqWifiInit, TX_BUF, WifiInitConfig, proto_data::RpcId, rpc::{Rpc, setup_rpc}, RpcReqWifiScanStart};
 use crate::rpc::{write_rpc, InterfaceType, WireType};
 
-use crate::esp_hosted_proto::Rpc as RpcP;
-use crate::esp_hosted_proto::RpcId as RpcIdP;
-use crate::header::build_frame;
 
 // todo: Macros may help.
 
