@@ -4,5 +4,5 @@ Cargo.lock
 
 *.proto
 
-*/esp_hosted_proto.rs
+src/proto.rs
 build_proto/target

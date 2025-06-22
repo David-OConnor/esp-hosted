@@ -15,10 +15,10 @@ documentation = "https://docs.rs/esp_hosted"
 readme = "README.md"
 license = "MIT"
 
-# This config is required to allow `esp_hosted_proto.rs`, without including it in the repo.
+# This config is required to allow `proto`, without including it in the repo.
 include = [
     "src/**",
-    "src/esp_hosted_proto.rs",
+    "src/proto.rs",
     "Cargo.toml",
     "README.md",
     "rustfmt.toml",

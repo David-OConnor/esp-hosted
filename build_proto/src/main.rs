@@ -19,6 +19,6 @@ fn main() {
     //         // .no_accessors(true),
     // )
 
-    gen_.compile_protos(&["esp_hosted_rpc.proto"], "../src/esp_hosted_proto.rs")
+    gen_.compile_protos(&["esp_hosted_rpc.proto"], "../src/proto")
         .unwrap();
 }

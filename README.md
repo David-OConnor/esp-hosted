@@ -1,10 +1,14 @@
+[![Crate](https://img.shields.io/crates/v/esp-hosted.svg)](https://crates.io/crates/esp-hosted)
+[![Docs](https://docs.rs/esp-hosted/badge.svg)](https://docs.rs/esp-hosted)
+
 # ESP Hosted
 For connecting to an [ESP-Hosted-MCU](https://github.com/espressif/esp-hosted-mcu) from a Host MCU with firmware
 written in rust.
 
-Compatible with ESP-Hosted-MCU 2.0.6, and any host MCU and architecture. For details on ESP-HOSTED-MCU's protocol see
+Compatible with ESP-Hosted-MCU 2.0.6 and ESP IDF 5.4.1 (And likely anything newer), and any host MCU and architecture. 
+For details on ESP-HOSTED-MCU's protocol see
 [this document](/esp_hosted_protocol.md). For how to use the commands in the library effectively, reference the
-[ESP32 IDF programming guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/index.html)
+[ESP32 IDF API docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html)
 
 This library includes two approaches: A high-level API using data structures from this library, and full access to 
 the native protobuf structures. The native API is easier to work with, but only implements a small portation of functionality.
@@ -51,17 +55,19 @@ fn USART2() {
             if rpc.msg_id == RpcId::EventHeartbeat {
                 // A/R. You could then parse `data_buf` into the appropriate response type.
             }
+            
+            // We have access to the raw proto message as well:
         }
     }
 }
 ```
 
-To perform specific actions, there are functions like `wifi_get_protocol`,  `wifi_start`, `get_wifi_mode` etc. There
+To perform specific actions, there are functions like `wifi::get_protocol`,  `wifi::start`, `wifi::get_mode` etc. There
 take a `write` fn and `uid` as parameters, and others on a per-message basis. These are set up using structs that
 are part of this library.
 
 These only cover a small portion of available functionality. To get the full functionality, create a `RpcP` struct, then 
-pass it, and a write fn to the `write_rpc_proto`. Constructing these `RpcP` structs is done IOC the `micropb` lib. Here's
+pass it, and a write fn to the `write_rpc_raw`. Constructing these `RpcP` structs is done IOC the `micropb` lib. Here's
 an example, using the same heartbeat config as above. This is more verbose than our high-level API, but is much more flexible:
 
 ```rust
@@ -81,10 +87,21 @@ an example, using the same heartbeat config as above. This is more verbose than 
 
         hb_msg.payload = Some(Rpc_::Payload::ReqConfigHeartbeat(hb_cfg));
 
-        esp_hosted::write_rpc_proto(buf, &mut write, hb_msg)?;
+        esp_hosted::write_rpc_raw(buf, &mut write, hb_msg)?;
     }
 ```
 
+
+### Example Wi-Fi initialization
+You will run steps like this prior to using Wi-Fi functionality in many cases:
+
+```rust
+wifi::init(&mut buf, &mut write, 0, &Default::default())?;
+
+wifi::set_mode(&mut buf, &mut write, 0, WifiMode::Ap)?;
+
+wifi::start(&mut buf, &mut write, 0)?;
+```
 
 ### Building the proto file
 This is not required if installing from crates.io; only applicable if working with the source directly.
@@ -98,3 +115,9 @@ To build it:
 
 - **2:** Run the `build_proto` sub application with `cargo run` from its directory. This will place `esp_hosed_proto.rs` 
 - in this program's `src` folder.
+
+
+
+### Eratta
+Raw parsing of repeated records (As defined by protobuf) are not parsed in their raw format. 
+We will implement these manually as required. 

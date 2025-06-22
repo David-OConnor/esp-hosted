@@ -2,7 +2,7 @@
 //! is packaged into the Payload header and TLV structure. It contains a mix of protobuf-general
 //! concepts, and ones specific to the RPC used by esp-hosted-mcu.
 
-use defmt::{Format, println};
+use defmt::{Format, Formatter};
 use heapless::Vec;
 use micropb::{MessageEncode, PbEncoder};
 use num_enum::TryFromPrimitive;
@@ -13,18 +13,29 @@ use crate::{
     proto_data::RpcId,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
 };
+use crate::proto_data::{EventHeartbeat, RpcRespConfigHeartbeat, };
+use crate::wifi::WifiApRecord;
 
-pub(crate) const MAX_RPC_SIZE: usize = 300;
+// todo: A/R, or ideally pass in.
+pub(crate) const MAX_RPC_SIZE: usize = 500;
 pub(crate) const RPC_MIN_SIZE: usize = 10;
 
-// todo: Soruce?
-#[derive(Clone, Copy, Format)]
-#[repr(u8)]
-pub enum InterfaceType {
-    Station = 0,
-    Ap = 1,
-    // todo??
-    // Station = 2
+// #[derive(Format)]
+pub enum RpcPayload {
+    EventHeartbeat(EventHeartbeat),
+    EventWifiScanGetApRecord(WifiApRecord),
+    // todo: Setting up a static buf here may be trouble.
+    EventWifiScanGetApRecords(Vec<WifiApRecord, 30>),
+}
+
+impl Format for RpcPayload {
+    fn format(&self, fmt: Formatter<'_>) {
+        // todo: Temp  until we sort out the Vec problem.
+        // match self {
+        //     Self::EventHeartbeat(_) => (),
+            // _ => write!()
+        // }
+    }
 }
 
 /// See `esp_hosted_rpc.proto`.
@@ -36,6 +47,10 @@ pub struct Rpc {
     pub msg_id: RpcId,
     /// This is used for tracking purposes; it can be anything we want. Responses will match it.
     pub uid: u32,
+    /// Notes: A: this is semi-redundant with msg_id. B: We currently only use it for responses
+    /// and events, and maily for ones that have multiple records, which we've having a
+    /// hard time parsing with micropb.
+    pub payload: Option<RpcPayload>
     // This is followed by a (len-determined; sub-struct) field associated with the RPC Id.
     // It has field number = Rpc ID.
 }
@@ -46,6 +61,7 @@ impl Rpc {
             msg_type: RpcType::Req,
             msg_id,
             uid,
+            payload: None,
         }
     }
 
@@ -90,17 +106,18 @@ impl Rpc {
         let mut uid = 0; // Default if the UID is missing. We observe this for events.
         // This is a bit fragile, but works for now.
         if buf[3 + rpc_id_size] == 16 {
+            // UID present
             i += 1; // Skip the tag.
             let (uid_, uid_size) = decode_varint(&buf[i..])?;
             uid = uid_;
             i += uid_size;
-            // UID present
         }
 
         let result = Self {
             msg_type,
             msg_id,
             uid: uid as u32,
+            payload: None, // todo: Update this
         };
 
         let (_data_tag, data_tag_size) = decode_varint(&buf[i..])?;
@@ -230,21 +247,21 @@ pub fn setup_rpc(buf: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
 
 /// Sets up an RPC command to write using the automatic protbuf decoding from micropb. This is flexible, and
 /// allows writing arbitrary commands, but its interface isn't as streamlined as our native impl.
-pub fn setup_rpc_proto(buf: &mut [u8], message: RpcP) -> usize {
+pub fn setup_rpc_proto(buf: &mut [u8], message: RpcP) -> Result<usize, EspError> {
     let mut rpc_buf = Vec::<u8, MAX_RPC_SIZE>::new();
 
     let mut encoder = PbEncoder::new(&mut rpc_buf);
-    message.encode(&mut encoder).unwrap();
+    message.encode(&mut encoder).map_err(|_| EspError::Proto)?;
 
-    build_frame(buf, &rpc_buf[..message.compute_size()])
+    Ok(build_frame(buf, &rpc_buf[..rpc_buf.len()]))
 }
 
 /// Write an automatically-decoded protobuf message directly.
-pub fn write_rpc_proto<W>(buf: &mut [u8], mut write: W, msg: RpcP) -> Result<(), EspError>
+pub fn write_rpc_raw<W>(buf: &mut [u8], mut write: W, msg: RpcP) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
-    let frame_len = setup_rpc_proto(buf, msg);
+    let frame_len = setup_rpc_proto(buf, msg)?;
     write(&buf[..frame_len])?;
 
     Ok(())

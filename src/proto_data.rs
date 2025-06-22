@@ -4,15 +4,15 @@
 //! definitions for the data types [de]serialized. They're not automatically generated
 //! from the .proto file, and are used in our higher-level API.
 
-use defmt::{Format, println};
+use defmt::{println, Format};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
-
 use crate::rpc::{
+    write_rpc,
     WireType,
     WireType::{Len, Varint},
-    write_rpc,
 };
+use crate::wifi::{InitConfig, ScanConfig};
 
 const MAX_DATA_SIZE: usize = 300; // todo temp
 
@@ -241,253 +241,13 @@ pub enum RpcId {
     EventMax = 777,
 }
 
-#[derive(Clone, Format)]
-pub struct WifiInitConfig {
-    pub static_rx_buf_num: i32,
-    pub dynamic_rx_buf_num: i32,
-    pub tx_buf_type: i32,
-    pub static_tx_buf_num: i32,
-    pub dynamic_tx_buf_num: i32,
-    pub cache_tx_buf_num: i32,
-    //
-    pub csi_enable: i32,
-    pub ampdu_rx_enable: i32,
-    pub ampdu_tx_enable: i32,
-    pub amsdu_tx_enable: i32,
-    //
-    pub nvs_enable: i32,
-    pub nano_enable: i32,
-    pub rx_ba_win: i32,
-    //
-    pub wifi_task_core_id: i32,
-    pub beacon_max_len: i32,
-    pub mgmt_sbuf_num: i32,
-    pub feature_caps: u64,
-    pub sta_disconnected_pm: bool,
-    pub espnow_max_encrypt_num: i32,
-    pub magic: i32,
-}
 
-impl Default for WifiInitConfig {
-    /// Suitable for use as an AP (Station)
-    fn default() -> Self {
-        Self {
-            static_rx_buf_num: 10,
-            dynamic_rx_buf_num: 32,
-            tx_buf_type: 3, // dynamics
-            static_tx_buf_num: 0,
-            dynamic_tx_buf_num: 32,
-            cache_tx_buf_num: 32,
-            //
-            csi_enable: 0,
-            ampdu_rx_enable: 1,
-            ampdu_tx_enable: 1,
-            amsdu_tx_enable: 1,
-            //
-            nvs_enable: 1, // enable if using WiFi persistence
-            nano_enable: 0,
-            rx_ba_win: 6, // default block ack window
-            //
-            wifi_task_core_id: 0,
-            beacon_max_len: 752, // AP beacon max len
-            mgmt_sbuf_num: 32,
-            feature_caps: 0,
-            sta_disconnected_pm: false,
-            espnow_max_encrypt_num: 7,
-            magic: 0x1F2F3F4F, // todo: QC this.
-        }
-    }
-}
-
-impl WifiInitConfig {
-    /// Suitable for passive use
-    pub fn new_promiscuous() -> Self {
-        Self {
-            static_rx_buf_num: 10,
-            dynamic_rx_buf_num: 64,
-            tx_buf_type: 1,
-            static_tx_buf_num: 0,
-            dynamic_tx_buf_num: 32, // todo? 0 is giving out of range error
-            cache_tx_buf_num: 0,
-            //
-            csi_enable: 0,
-            ampdu_rx_enable: 0,
-            ampdu_tx_enable: 0,
-            amsdu_tx_enable: 0,
-            //
-            nvs_enable: 0, // enable if using WiFi persistence
-            nano_enable: 0,
-            rx_ba_win: 6, // default block ack window
-            //
-            wifi_task_core_id: 0,
-            beacon_max_len: 752, // AP beacon max len
-            mgmt_sbuf_num: 32,
-            feature_caps: 0,
-            sta_disconnected_pm: false,
-            espnow_max_encrypt_num: 0,
-            magic: 0x1F2F3F4F, // todo: QC this.
-        }
-    }
-
-    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-        let c = &self;
-        let v = WireType::Varint;
-
-        let mut i = 0;
-
-        write_rpc(buf, 1, v, c.static_rx_buf_num as u64, &mut i);
-        write_rpc(buf, 2, v, c.dynamic_rx_buf_num as u64, &mut i);
-        write_rpc(buf, 3, v, c.tx_buf_type as u64, &mut i);
-        write_rpc(buf, 4, v, c.static_tx_buf_num as u64, &mut i);
-        write_rpc(buf, 5, v, c.dynamic_tx_buf_num as u64, &mut i);
-        write_rpc(buf, 6, v, c.cache_tx_buf_num as u64, &mut i);
-        write_rpc(buf, 7, v, c.csi_enable as u64, &mut i);
-        write_rpc(buf, 8, v, c.ampdu_rx_enable as u64, &mut i);
-        write_rpc(buf, 9, v, c.ampdu_tx_enable as u64, &mut i);
-        write_rpc(buf, 10, v, c.amsdu_tx_enable as u64, &mut i);
-        write_rpc(buf, 11, v, c.nvs_enable as u64, &mut i);
-        write_rpc(buf, 12, v, c.nano_enable as u64, &mut i);
-        write_rpc(buf, 13, v, c.rx_ba_win as u64, &mut i);
-        write_rpc(buf, 14, v, c.wifi_task_core_id as u64, &mut i);
-        write_rpc(buf, 15, v, c.beacon_max_len as u64, &mut i);
-        write_rpc(buf, 16, v, c.mgmt_sbuf_num as u64, &mut i);
-        write_rpc(buf, 17, v, c.feature_caps, &mut i);
-        write_rpc(buf, 18, v, c.sta_disconnected_pm as u64, &mut i);
-        write_rpc(buf, 19, v, c.espnow_max_encrypt_num as u64, &mut i);
-        write_rpc(buf, 20, v, c.magic as u64, &mut i);
-
-        i
-    }
-}
-
-// ---------- WiFi Country ----------
-// #[derive(Format)]
-pub struct WifiCountry {
-    pub cc: Vec<u8, 30>,
-    pub schan: u32,
-    pub nchan: u32,
-    pub max_tx_power: i32,
-    pub policy: i32,
-}
-
-// ---------- WiFi Active Scan Time ----------
 #[derive(Default, Format)]
-pub struct WifiActiveScanTime {
-    /// 0 means use built-ins.
-    pub min: u32,
-    pub max: u32,
-}
-
-impl WifiActiveScanTime {
-    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-        let mut i = 0;
-
-        write_rpc(buf, 1, Varint, self.min as u64, &mut i);
-        write_rpc(buf, 2, Varint, self.max as u64, &mut i);
-
-        i
-    }
-}
-
-// ---------- WiFi Scan Time ----------
-// #[derive(Default, Format)]
-#[derive(Default)]
-pub struct WifiScanTime {
-    pub active: WifiActiveScanTime,
-    /// 0 means use default of 360ms.
-    pub passive: u32,
-}
-
-impl WifiScanTime {
-    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-        let mut i = 0;
-
-        // todo size?
-        let mut scan_time_buf = [0; 6];
-        let active_size = self.active.to_bytes(&mut scan_time_buf);
-
-        write_rpc(buf, 1, Len, active_size as u64, &mut i);
-        buf[i..i + active_size].copy_from_slice(&scan_time_buf[..active_size]);
-        i += active_size;
-
-        write_rpc(buf, 2, Varint, self.passive as u64, &mut i);
-
-        i
-    }
-}
-
-// ---------- WiFi Scan Config ----------
-// #[derive(Default, Format)]
-#[derive(Default)]
-pub struct WifiScanConfig {
-    /// Can limit to a specific SSID or MAC. Empty means no filter.
-    pub ssid: Vec<u8, 30>,
-    pub bssid: Vec<u8, 30>,
-    /// 0 means no filter.
-    pub channel: u32,
-    pub show_hidden: bool,
-    /// 0 means active. 1 is passive. 2 is follow.
-    pub scan_type: i32,
-    pub scan_time: WifiScanTime,
-    pub home_chan_dwell_time: u32,
-}
-
-impl WifiScanConfig {
-    pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
-        let mut i = 0;
-
-        write_rpc(buf, 1, Len, self.ssid.len() as u64, &mut i);
-        buf[i..i + self.ssid.len()].copy_from_slice(&self.ssid);
-        i += self.ssid.len();
-
-        write_rpc(buf, 2, Len, self.bssid.len() as u64, &mut i);
-        buf[i..i + self.bssid.len()].copy_from_slice(&self.bssid);
-        i += self.bssid.len();
-
-        write_rpc(buf, 3, Varint, self.channel as u64, &mut i);
-        write_rpc(buf, 4, Varint, self.show_hidden as u64, &mut i);
-        write_rpc(buf, 5, Varint, self.scan_type as u64, &mut i);
-
-        // todo size?
-        let mut scan_time_buf = [0; 8];
-        let scan_time_size = self.scan_time.to_bytes(&mut scan_time_buf);
-
-        write_rpc(buf, 6, Len, scan_time_size as u64, &mut i);
-        buf[i..i + scan_time_size].copy_from_slice(&scan_time_buf[..scan_time_size]);
-        i += scan_time_size;
-
-        write_rpc(buf, 7, Varint, self.home_chan_dwell_time as u64, &mut i);
-
-        i
-    }
-}
-
-// ---------- WiFi HE AP Info ----------
-#[derive(Format)]
 pub struct WifiHeApInfo {
     pub bitmask: u32,
     pub bssid_index: u32,
 }
 
-// ---------- WiFi AP Record ----------
-// #[derive(Format)]
-pub struct WifiApRecord {
-    pub bssid: Vec<u8, 30>,
-    pub ssid: Vec<u8, 30>,
-    pub primary: u32,
-    pub second: i32,
-    pub rssi: i32,
-    pub authmode: i32,
-    pub pairwise_cipher: i32,
-    pub group_cipher: i32,
-    pub ant: i32,
-    pub bitmask: u32,
-    pub country: WifiCountry,
-    pub he_ap: WifiHeApInfo,
-    pub bandwidth: u32,
-    pub vht_ch_freq1: u32,
-    pub vht_ch_freq2: u32,
-}
 
 // ---------- WiFi Scan Threshold ----------
 #[derive(Format)]
@@ -633,10 +393,16 @@ pub struct RpcRespConfigHeartbeat {
     pub resp: i32,
 }
 
+#[derive(Format)]
+pub struct EventHeartbeat {
+    /// Number of beats
+    pub number:  u32
+}
+
 // ---------- WiFi Init/Deinit ----------
 #[derive(Format)]
 pub struct RpcReqWifiInit {
-    pub cfg: WifiInitConfig,
+    pub cfg: InitConfig,
 }
 
 impl RpcReqWifiInit {
@@ -660,35 +426,7 @@ impl RpcReqWifiInit {
     }
 }
 
-#[derive(Format)]
-pub struct RpcRespWifiInit {
-    pub resp: i32,
-}
 
-#[derive(Format)]
-pub struct RpcReqWifiDeinit;
-
-#[derive(Format)]
-pub struct RpcRespWifiDeinit {
-    pub resp: i32,
-}
-
-// ---------- WiFi Config ----------
-// #[derive(Format)]
-pub struct RpcReqWifiSetConfig {
-    pub iface: i32,
-    pub cfg: WifiConfig,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiSetConfig {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiGetConfig {
-    pub iface: i32,
-}
 
 // #[derive(Format)]
 pub struct RpcRespWifiGetConfig {
@@ -697,44 +435,10 @@ pub struct RpcRespWifiGetConfig {
     pub cfg: WifiConfig,
 }
 
-// ---------- WiFi Control ----------
-#[derive(Format)]
-pub struct RpcReqWifiConnect;
-
-#[derive(Format)]
-pub struct RpcRespWifiConnect {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiDisconnect;
-
-#[derive(Format)]
-pub struct RpcRespWifiDisconnect {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiStart;
-
-#[derive(Format)]
-pub struct RpcRespWifiStart {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiStop;
-
-#[derive(Format)]
-pub struct RpcRespWifiStop {
-    pub resp: i32,
-}
-
-// ---------- WiFi Scanning ----------
 // #[derive(Default, Format)]
 #[derive(Default)]
 pub struct RpcReqWifiScanStart {
-    pub config: WifiScanConfig,
+    pub config: ScanConfig,
     /// true → RPC blocks until scan complete; false → returns immediately and you wait for
     /// WIFI_SCAN_DONE then pull the list.
     pub block: bool,
@@ -763,139 +467,7 @@ impl RpcReqWifiScanStart {
     }
 }
 
-#[derive(Format)]
-pub struct RpcRespWifiScanStart {
-    pub resp: i32,
-}
 
-#[derive(Format)]
-pub struct RpcReqWifiScanStop;
-
-#[derive(Format)]
-pub struct RpcRespWifiScanStop {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiScanGetApNum;
-
-#[derive(Format)]
-pub struct RpcRespWifiScanGetApNum {
-    pub resp: i32,
-    pub number: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiScanGetApRecords {
-    pub number: i32,
-}
-
-// #[derive(Format)]
-pub struct RpcRespWifiScanGetApRecords {
-    pub resp: i32,
-    pub number: i32,
-    pub ap_records: Vec<WifiApRecord, 50>,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiScanGetApRecord;
-
-// #[derive(Format)]
-pub struct RpcRespWifiScanGetApRecord {
-    pub resp: i32,
-    pub ap_record: WifiApRecord,
-}
-
-// ---------- WiFi List Management ----------
-#[derive(Format)]
-pub struct RpcReqWifiClearApList;
-
-#[derive(Format)]
-pub struct RpcRespWifiClearApList {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiRestore;
-
-#[derive(Format)]
-pub struct RpcRespWifiRestore {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiClearFastConnect;
-
-#[derive(Format)]
-pub struct RpcRespWifiClearFastConnect {
-    pub resp: i32,
-}
-
-// ---------- WiFi Deauth & STA ----------
-#[derive(Format)]
-pub struct RpcReqWifiDeauthSta {
-    pub aid: i32,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiDeauthSta {
-    pub resp: i32,
-    pub aid: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiStaGetApInfo;
-
-// #[derive(Format)]
-pub struct RpcRespWifiStaGetApInfo {
-    pub resp: i32,
-    pub ap_record: WifiApRecord,
-}
-
-// ---------- WiFi Protocol/Bandwidth/Channel ----------
-#[derive(Format)]
-pub struct RpcReqWifiSetProtocol {
-    pub ifx: i32,
-    pub protocol_bitmap: i32,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiSetProtocol {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiGetProtocol {
-    pub ifx: i32,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiGetProtocol {
-    pub resp: i32,
-    pub protocol_bitmap: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiSetBandwidth {
-    pub ifx: i32,
-    pub bw: i32,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiSetBandwidth {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiGetBandwidth {
-    pub ifx: i32,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiGetBandwidth {
-    pub resp: i32,
-    pub bw: i32,
-}
 
 #[derive(Format)]
 pub struct RpcReqWifiSetChannel {
@@ -907,9 +479,6 @@ pub struct RpcReqWifiSetChannel {
 pub struct RpcRespWifiSetChannel {
     pub resp: i32,
 }
-
-#[derive(Format)]
-pub struct RpcReqWifiGetChannel;
 
 #[derive(Format)]
 pub struct RpcRespWifiGetChannel {
