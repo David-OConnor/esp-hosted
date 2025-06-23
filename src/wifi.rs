@@ -1,27 +1,20 @@
 //! This module contains Wi-Fi and BLE-specific functionality.
 
-use defmt::{println, Format};
+use defmt::{Format, println};
 use heapless::Vec;
+use num_enum::TryFromPrimitive;
 
 use crate::{
-    proto_data::{RpcId, RpcReqWifiInit, RpcReqWifiScanStart},
-    rpc::{setup_rpc, write_rpc, Rpc, WireType},
-    util::write_empty_msg,
     EspError,
+    WireType::{Len, Varint},
+    proto_data::{RpcId, RpcReqWifiInit, RpcReqWifiScanStart},
+    rpc::{Rpc, WireType, decode_tag, decode_varint, setup_rpc, write_rpc},
+    util::write_empty_msg,
 };
-use crate::proto_data::WifiHeApInfo;
-use crate::rpc::decode_varint;
-use crate::WireType::{Len, Varint};
 // todo: Macros may help.
 
-// /// Information about one Wi-Fi access point
-// #[derive(Debug)]
-// pub struct ApInfo {
-//     pub ssid: String<32>,
-//     pub bssid: [u8; 6],
-//     pub rssi: i8,
-// }
-//
+const MAX_AP_RECORDS: usize = 30; // todo: A/R.
+
 // /// Information about one BLE advertisement
 // #[derive(Debug)]
 // pub struct BleDevice {
@@ -30,6 +23,43 @@ use crate::WireType::{Len, Varint};
 //     pub rssi: i8,
 // }
 
+/// From a data buffer (e.g. as part of the Rpc struct), parse into Access Point records.
+/// The data buffer passed starts post the RPC "header"; the same data we include in the `Rpc` struct.
+pub fn parse_ap_records(data: &[u8]) -> Result<Vec<WifiApRecord, MAX_AP_RECORDS>, EspError> {
+    let mut result = Vec::new();
+
+    let mut i = 1; // todo: Not robust!
+    if data.len() == 0 {
+        return Err(EspError::InvalidData);
+    }
+
+    let (num_records, nr_len) = decode_varint(&data[i..])?;
+    i += nr_len;
+    // println!("Num records found: {:?}", num_records);
+
+    for _ in 0..num_records {
+        i += 1; // todo: Skipping over the tag for the records struct.
+        let (record_len, record_len_len) = decode_varint(&data[i..])?;
+        i += record_len_len;
+        // println!("Record data len: {:?}", record_len);
+        // println!("Examining record: {:?}", data[i..i + 30]);
+
+        // todo: This won't work; you need to get the varint size of each field etc!
+        let (record, record_size) = WifiApRecord::from_bytes(&data[i..])?;
+        i += record_len as usize;
+
+        // todo temp
+        // println!(
+        //     "MAC: {:?} SSID: {:?}",
+        //     &record.bssid.as_slice(),
+        //     &record.ssid.as_slice()
+        // );
+
+        result.push(record).map_err(|_| EspError::Capacity)?;
+    }
+
+    Ok(result)
+}
 
 #[derive(Clone, Format)]
 pub struct InitConfig {
@@ -150,15 +180,18 @@ impl InitConfig {
     }
 }
 
-// ---------- WiFi Country ----------
-// #[derive(Format)]
-#[derive(Default)]
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv414wifi_country_t]
+#[derive(Default, Format)]
 pub struct WifiCountry {
-    pub cc: Vec<u8, 30>,
-    pub schan: u32,
-    pub nchan: u32,
-    pub max_tx_power: i32,
-    pub policy: i32,
+    /// Country code string.
+    pub cc: [u8; 3],
+    /// Start channel of the allowed 2.4GHz Wi-Fi channels
+    pub schan: u8,
+    /// Total channel number of the allowed 2.4GHz Wi-Fi channels
+    pub nchan: u8,
+    pub max_tx_power: i8,
+    /// Enum. Auto for 0, Manual for 1
+    pub policy: u8,
 }
 
 // ---------- WiFi Active Scan Time ----------
@@ -259,72 +292,229 @@ pub struct RpcRespWifiScanGetApRecords {
     pub ap_records: Vec<WifiApRecord, 50>,
 }
 
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv418wifi_second_chan_t)
+#[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum WifiSecondChan {
+    #[default]
+    None = 0,
+    Above = 1,
+    Below = 2,
+}
+
+/// Wi-Fi authmode type Strength of authmodes Personal Networks : OPEN < WEP < WPA_PSK < OWE < WPA2_PSK =
+/// WPA_WPA2_PSK < WAPI_PSK < WPA3_PSK = WPA2_WPA3_PSK = DPP Enterprise Networks : WIFI_AUTH_WPA2_ENTERPRISE
+/// < WIFI_AUTH_WPA3_ENTERPRISE = WIFI_AUTH_WPA2_WPA3_ENTERPRISE < WIFI_AUTH_WPA3_ENT_192.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv416wifi_auth_mode_t)
+#[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum WifiAuthMode {
+    #[default]
+    Open = 0,
+    WEP = 1,
+    WPA_PSK = 2,
+    WPA2_PSK = 3,
+    WPA_WPA2_PSK = 4,
+    ENTERPRISE = 5,
+    WPA2_ENTERPRISE = 6,
+    WPA3_PSK = 7,
+    // todo: MOre A/R.
+}
+
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv418wifi_cipher_type_t)
+#[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum WifiCipher {
+    #[default]
+    None = 0,
+    WEP40 = 1,
+    WEP104 = 2,
+    TKIP = 3,
+    CCMP = 4,
+    TKIP_CCMP = 5,
+    AES_CMAC128 = 6,
+    SMS4 = 7,
+    GCMP = 8,
+    GCMP256 = 9,
+    AES_GMAC128 = 10,
+    AES_GMAC256 = 11,
+    UNKNOWN = 12, // todo: MOre A/R.
+}
+
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv410wifi_ant_t)
+#[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum WifiAnt {
+    #[default]
+    Ant0 = 0,
+    Ant1 = 1,
+    /// Invalid
+    Max = 2,
+}
+
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv416wifi_bandwidth_t)
+#[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum WifiBandwidth {
+    #[default]
+    HT20 = 0,
+    BW20 = 1,
+    BW_HT40 = 2,
+    BW40 = 3,
+    BW80 = 4,
+    BW160 = 5,
+    BW80_BW80 = 6,
+}
+
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv417wifi_he_ap_info_t)
+#[derive(Default, Format)]
+// todo: The protobuf here doesn't match teh normal docs version
+pub struct WifiHeApInfo {
+    pub bitmask: u32,
+    pub bssid_index: u32,
+}
+
+///Description of a Wi-Fi AP.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv416wifi_ap_record_t)
 // #[derive(Format)]
 #[derive(Default)]
-/// [docs](WifiApRecord)
 pub struct WifiApRecord {
-    pub bssid: Vec<u8, 6>,
+    pub bssid: [u8; 6],
     pub ssid: Vec<u8, 33>,
-    pub primary: u32,
-    pub second: i32,
-    pub rssi: i32,
-    pub authmode: i32,
-    pub pairwise_cipher: i32,
-    pub group_cipher: i32,
+    /// Channel of AP
+    pub primary: u8,
+    pub second: WifiSecondChan,
+    pub rssi: i8,
+    pub authmode: WifiAuthMode,
+    pub pairwise_cipher: WifiCipher,
+    pub group_cipher: WifiCipher,
     /// Antenna used to receive beacon from AP
-    pub ant: u8,
+    pub ant: WifiAnt,
+    /// Bit 0, 11b. 1: 11g. 2: 11n. 3: low rate. 4-6: 11ax mode.
     pub bitmask: u32,
     pub country: WifiCountry,
     pub he_ap: WifiHeApInfo,
     ///For AP 20 MHz this value is set to 1. For AP 40 MHz this value is set to 2.
     ///  For AP 80 MHz this value is set to 3. For AP 160MHz this value is set to 4.
     ///     For AP 80+80MHz this value is set to 5
-    pub bandwidth: u32,
+    pub bandwidth: WifiBandwidth,
     ///This fields are used only AP bandwidth is 80 and 160 MHz, to transmit the center channel
     ///   frequency of the BSS. For AP bandwidth is 80 + 80 MHz, it is the center channel frequency
     ///    of the lower frequency segment.
-    pub vht_ch_freq1: u32,
+    pub vht_ch_freq1: u8,
     ///This fields are used only AP bandwidth is 80 + 80 MHz, and is used to transmit the center
     ///   channel frequency of the second segment.
-    pub vht_ch_freq2: u32,
+    pub vht_ch_freq2: u8,
 }
 
 impl WifiApRecord {
     pub fn from_bytes(buf: &[u8]) -> Result<(Self, usize), EspError> {
         let mut i = 0;
+        let mut result = Self::default();
 
-        // Note: this assumes fields are passed in order.
-        let (tag_bssid, len_bssid_tag) = decode_varint(&buf[i..])?;
-        i += len_bssid_tag;
+        loop {
+            if i >= buf.len() {
+                break;
+            }
+            let (tag, tag_len) = decode_varint(&buf[i..])?;
+            i += tag_len;
 
-        let (len_bssid, bssid_len_len) = decode_varint(&buf[i..])?;
-        i += bssid_len_len;
+            let (field, wire_type) = decode_tag(tag as u16);
 
-        if i + len_bssid as usize >= buf.len() {
-            return Err(EspError::InvalidData);
+            match field {
+                1 => {
+                    let (field_len, field_len_len) = decode_varint(&buf[i..])?;
+                    i += field_len_len;
+                    // println!("BSSID field len: {:?}", field_len);
+                    // println!("BSSID buf: {:?}", &buf[i..i + field_len as usize]);
+
+                    if i + field_len as usize >= buf.len() {
+                        return Err(EspError::Capacity);
+                    }
+
+                    result
+                        .bssid
+                        .copy_from_slice(&buf[i..i + field_len as usize]);
+                    i += field_len as usize;
+                }
+                2 => {
+                    let (field_len, field_len_len) = decode_varint(&buf[i..])?;
+                    i += field_len_len;
+                    // println!("SSID field len: {:?}", field_len);
+                    // println!("SSID buf: {:?}", &buf[i..i + field_len as usize]);
+
+                    if i + field_len as usize >= buf.len() {
+                        return Err(EspError::Capacity);
+                    }
+
+                    result.ssid = Vec::<_, 33>::from_slice(&buf[i..i + field_len as usize])
+                        .map_err(|e| EspError::InvalidData)?;
+                    i += field_len as usize;
+                }
+                3 => {
+                    result.primary = buf[i];
+                    i += 1;
+                }
+                4 => {
+                    result.second = buf[i].try_into().unwrap_or_default();
+                    i += 1;
+                }
+                5 => {
+                    result.rssi = buf[i] as i8;
+                    i += 10; // Non-zigzag protobuf negative val encoding... yikes.
+                }
+                6 => {
+                    result.authmode = buf[i].try_into().unwrap_or_default();
+                    i += 1;
+                }
+                7 => {
+                    result.pairwise_cipher = buf[i].try_into().unwrap_or_default();
+                    i += 1;
+                }
+                8 => {
+                    result.group_cipher = buf[i].try_into().unwrap_or_default();
+                    i += 1;
+                }
+                9 => {
+                    result.ant = buf[i].try_into().unwrap_or_default();
+                    i += 1;
+                }
+                10 => {
+                    let (val, len) = decode_varint(&buf[i..])?;
+                    result.bitmask = val as u32;
+                    i += len;
+                }
+                11 => {
+                    let (country_len, country_len_len) = decode_varint(&buf[i..])?;
+                    i += country_len_len;
+                    // todo: Parse here.
+                    i += country_len as usize;
+                }
+                12 => {
+                    let (he_ap_len, he_ap_len_len) = decode_varint(&buf[i..])?;
+                    i += he_ap_len_len;
+                    // todo: Parse here.
+                    i += he_ap_len as usize;
+                }
+                13 => {
+                    result.bandwidth = buf[i].try_into().unwrap_or_default();
+                    i += 1;
+                }
+                14 => {
+                    result.vht_ch_freq1 = buf[i];
+                    i += 1;
+                }
+                15 => {
+                    result.vht_ch_freq2 = buf[i];
+                    i += 1;
+                }
+                _ => {
+                    println!("Unparsed field: {:?}", field);
+                }
+
+                _ => (),
+            }
         }
-
-        let mut bssid = Vec::<_, 6>::from_slice(&buf[i..i + len_bssid as usize]).map_err(|e| EspError::InvalidData)?;
-        i += len_bssid as usize;
-
-        let (tag_ssid, len_ssid_tag) = decode_varint(&buf[i..])?;
-        i += len_ssid_tag;
-
-        let (len_ssid, ssid_len_len) = decode_varint(&buf[i..])?;
-        i += ssid_len_len;
-
-        if i + len_ssid as usize >= buf.len() {
-            return Err(EspError::InvalidData);
-        }
-        let mut ssid = Vec::<_, 33>::from_slice(&buf[i..i + len_ssid as usize]).map_err(|e| EspError::InvalidData)?;
-        i += len_ssid as usize;
-
-        let result = Self {
-            bssid,
-            ssid,
-            ..Default::default() // todo: Fill in fields A/R
-        };
-
 
         Ok((result, i))
     }

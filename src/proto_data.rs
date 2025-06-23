@@ -4,15 +4,18 @@
 //! definitions for the data types [de]serialized. They're not automatically generated
 //! from the .proto file, and are used in our higher-level API.
 
-use defmt::{println, Format};
+use defmt::{Format, println};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
-use crate::rpc::{
-    write_rpc,
-    WireType,
-    WireType::{Len, Varint},
+
+use crate::{
+    rpc::{
+        WireType,
+        WireType::{Len, Varint},
+        write_rpc,
+    },
+    wifi::{InitConfig, ScanConfig},
 };
-use crate::wifi::{InitConfig, ScanConfig};
 
 const MAX_DATA_SIZE: usize = 300; // todo temp
 
@@ -241,14 +244,6 @@ pub enum RpcId {
     EventMax = 777,
 }
 
-
-#[derive(Default, Format)]
-pub struct WifiHeApInfo {
-    pub bitmask: u32,
-    pub bssid_index: u32,
-}
-
-
 // ---------- WiFi Scan Threshold ----------
 #[derive(Format)]
 pub struct WifiScanThreshold {
@@ -389,14 +384,9 @@ impl RpcReqConfigHeartbeat {
 }
 
 #[derive(Format)]
-pub struct RpcRespConfigHeartbeat {
-    pub resp: i32,
-}
-
-#[derive(Format)]
 pub struct EventHeartbeat {
     /// Number of beats
-    pub number:  u32
+    pub number: u32,
 }
 
 // ---------- WiFi Init/Deinit ----------
@@ -425,8 +415,6 @@ impl RpcReqWifiInit {
         i
     }
 }
-
-
 
 // #[derive(Format)]
 pub struct RpcRespWifiGetConfig {
@@ -467,8 +455,6 @@ impl RpcReqWifiScanStart {
     }
 }
 
-
-
 #[derive(Format)]
 pub struct RpcReqWifiSetChannel {
     pub primary: i32,
@@ -476,13 +462,7 @@ pub struct RpcReqWifiSetChannel {
 }
 
 #[derive(Format)]
-pub struct RpcRespWifiSetChannel {
-    pub resp: i32,
-}
-
-#[derive(Format)]
 pub struct RpcRespWifiGetChannel {
-    pub resp: i32,
     pub primary: i32,
     pub second: i32,
 }

@@ -7,14 +7,14 @@ use heapless::Vec;
 use micropb::{MessageEncode, PbEncoder};
 use num_enum::TryFromPrimitive;
 
+pub use crate::proto_data::RpcId;
 use crate::{
     EspError, RpcP,
     header::build_frame,
-    proto_data::RpcId,
+    proto_data::EventHeartbeat,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
+    wifi::WifiApRecord,
 };
-use crate::proto_data::{EventHeartbeat, RpcRespConfigHeartbeat, };
-use crate::wifi::WifiApRecord;
 
 // todo: A/R, or ideally pass in.
 pub(crate) const MAX_RPC_SIZE: usize = 500;
@@ -33,7 +33,7 @@ impl Format for RpcPayload {
         // todo: Temp  until we sort out the Vec problem.
         // match self {
         //     Self::EventHeartbeat(_) => (),
-            // _ => write!()
+        // _ => write!()
         // }
     }
 }
@@ -50,9 +50,8 @@ pub struct Rpc {
     /// Notes: A: this is semi-redundant with msg_id. B: We currently only use it for responses
     /// and events, and maily for ones that have multiple records, which we've having a
     /// hard time parsing with micropb.
-    pub payload: Option<RpcPayload>
-    // This is followed by a (len-determined; sub-struct) field associated with the RPC Id.
-    // It has field number = Rpc ID.
+    pub payload: Option<RpcPayload>, // This is followed by a (len-determined; sub-struct) field associated with the RPC Id.
+                                     // It has field number = Rpc ID.
 }
 
 impl Rpc {
@@ -131,9 +130,10 @@ impl Rpc {
 }
 
 /// https://protobuf.dev/programming-guides/encoding/
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
+#[derive(Clone, Copy, Default, PartialEq, Format, TryFromPrimitive)]
 #[repr(u8)]
 pub enum WireType {
+    #[default]
     /// i32, i64, u32, u64, sint64, sint32, sing64, bool, enum
     Varint = 0,
     /// fixed64, sfixed64, double
@@ -270,14 +270,21 @@ where
 /// Handles making tags, and encoding as varints. Increments the index.
 /// todo: Consider here, and `encode_varint`, using u32 vice u64.
 pub(crate) fn write_rpc(buf: &mut [u8], field: u16, wire_type: WireType, val: u64, i: &mut usize) {
-    let tag = make_tag(field, wire_type);
+    let tag = encode_tag(field, wire_type);
     *i += encode_varint(tag as u64, &mut buf[*i..]);
     *i += encode_varint(val, &mut buf[*i..]);
 }
 
 /// Used in a few places when setting up RPC.
-pub(crate) fn make_tag(field: u16, wire_type: WireType) -> u16 {
+pub(crate) fn encode_tag(field: u16, wire_type: WireType) -> u16 {
     (field << 3) | (wire_type as u16)
+}
+
+pub(crate) fn decode_tag(val: u16) -> (u16, WireType) {
+    (
+        val >> 3,
+        ((val & 0b111) as u8).try_into().unwrap_or_default(),
+    )
 }
 
 /// Encodes `v` as little-endian 7-bit var-int.

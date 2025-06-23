@@ -20,15 +20,16 @@ pub use header::PayloadHeader;
 use micropb::{MessageDecode, MessageEncode, PbDecoder};
 use num_enum::TryFromPrimitive;
 pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP, *};
+pub use proto_data::RpcId;
 
 // use crate::esp_errors::EspCode;
 pub use crate::rpc::*;
 use crate::{
     header::{HEADER_SIZE, PL_HEADER_SIZE},
-    proto_data::{RpcId, RpcReqConfigHeartbeat},
+    proto_data::RpcReqConfigHeartbeat,
     rpc::{Rpc, setup_rpc},
+    wifi::WifiApRecord,
 };
-use crate::wifi::WifiApRecord;
 
 #[macro_export]
 macro_rules! parse_le {
@@ -57,6 +58,7 @@ pub enum EspError {
     Timeout,
     InvalidData,
     Proto,
+    Capacity,
     // todo: Put back. flash limit problem.
     // Esp(EspCode),
 }
@@ -106,41 +108,16 @@ pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
     let total_size = header.len as usize + PL_HEADER_SIZE;
 
     if total_size > buf.len() {
-        return Err(EspError::InvalidData);
+        return Err(EspError::Capacity);
     }
 
     let rpc_buf = &buf[HEADER_SIZE..total_size];
     let (rpc, data_start_i, _data_len_rpc) = Rpc::from_bytes(rpc_buf)?;
     let data = &rpc_buf[data_start_i..];
 
-    println!("\n\n\n\nParsing msg..."); // todo tmep
-
-    // todo: Sort out how to organize these.
-    if rpc.msg_id == RpcId::RespWifiScanGetApRecords && data.len() >= 1 {
-        let mut i = 1; // todo: Not robust!
-        let (num_records, nr_len) = decode_varint(&data[i..])?;
-        i += nr_len;
-        println!("Num records found: {:?}", num_records);
-
-        // todo hmm. this doesn't sound right. Getting values too low, like 57 when observed buf len of 313.
-
-
-        for _ in 0..num_records {
-            i += 1; // todo: Skipping over the tag for the records struct.
-            let (record_len, record_len_len) = decode_varint(&data[i..])?;
-            i += record_len_len;
-            println!("Record data len: {:?}", record_len);
-
-            println!("Examing record: {:?}", data[i..i+16]);
-
-            // todo: This won't work; you need to get the varint size of each field etc!
-            let (record, record_size) = WifiApRecord::from_bytes(&data[i..])?;
-            i += record_len as usize;
-
-            println!("MAC: {:?} SSID: {:?}", &record.bssid.as_slice(), &record.ssid.as_slice());
-        }
-
-    }
+    // todo: Temp to get troubleshooting data to the micropb GH.
+    println!("RPC BUF: {:?}", rpc_buf);
+    // println!("\n\n\n\nParsing msg..."); // todo tmep
 
     // Parsing the proto data from the generated mod.
     let mut decoder = PbDecoder::new(rpc_buf);
@@ -151,8 +128,7 @@ pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
     //     .decode(&mut decoder, rpc_buf.len())
     //     .map_err(|_| EspError::Proto)?;
 
-
-    // Workaround to fall back to our native API, setting this none, vice returning an error.
+    // Workaround to fall back to our native API, setting MicroPB's parse result to None, vice returning an error.
     let mut rpc_proto_ = None;
     match rpc_proto.decode(&mut decoder, rpc_buf.len()) {
         Ok(_) => rpc_proto_ = Some(rpc_proto),
@@ -160,23 +136,22 @@ pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
             match e {
                 micropb::DecodeError::ZeroField => println!("ZF"),
                 micropb::DecodeError::UnexpectedEof => println!("Ueof"),
-                micropb::DecodeError::Deprecation=> println!("Dep"),
-                micropb::DecodeError::UnknownWireType=> println!("UWT"),
-                micropb::DecodeError::VarIntLimit=> println!("Varlint"),
-                micropb::DecodeError::CustomField=> println!("CustomF"),
-                micropb::DecodeError::Utf8=> println!("Utf"),
-                micropb::DecodeError::Capacity=> {
+                micropb::DecodeError::Deprecation => println!("Dep"),
+                micropb::DecodeError::UnknownWireType => println!("UWT"),
+                micropb::DecodeError::VarIntLimit => println!("Varlint"),
+                micropb::DecodeError::CustomField => println!("CustomF"),
+                micropb::DecodeError::Utf8 => println!("Utf"),
+                micropb::DecodeError::Capacity => {
                     // println!("RPC buf len: {} Msg size (micropb): {}", rpc_buf.len(), rpc_proto.compute_size());
                     println!("MIcropb capacity error");
-                },
-                micropb::DecodeError::WrongLen=> println!("WrongLen"),
-                micropb::DecodeError::Reader(e2)=> println!("Reader"),
+                }
+                micropb::DecodeError::WrongLen => println!("WrongLen"),
+                micropb::DecodeError::Reader(e2) => println!("Reader"),
                 _ => println!("Other"),
             }
             println!("Micropb decode error on: {:?}", rpc.msg_type);
         }
     }
-
 
     Ok(ParsedMsg {
         header,
