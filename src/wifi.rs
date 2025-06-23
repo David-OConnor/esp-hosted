@@ -39,21 +39,19 @@ pub fn parse_ap_records(data: &[u8]) -> Result<Vec<WifiApRecord, MAX_AP_RECORDS>
 
     for _ in 0..num_records {
         i += 1; // todo: Skipping over the tag for the records struct.
+
+        if i >= data.len() {
+            return Err(EspError::InvalidData);
+        }
+
         let (record_len, record_len_len) = decode_varint(&data[i..])?;
         i += record_len_len;
         // println!("Record data len: {:?}", record_len);
         // println!("Examining record: {:?}", data[i..i + 30]);
 
         // todo: This won't work; you need to get the varint size of each field etc!
-        let (record, record_size) = WifiApRecord::from_bytes(&data[i..])?;
+        let (record, _record_size) = WifiApRecord::from_bytes(&data[i..i + record_len as usize])?;
         i += record_len as usize;
-
-        // todo temp
-        // println!(
-        //     "MAC: {:?} SSID: {:?}",
-        //     &record.bssid.as_slice(),
-        //     &record.ssid.as_slice()
-        // );
 
         result.push(record).map_err(|_| EspError::Capacity)?;
     }
@@ -180,20 +178,6 @@ impl InitConfig {
     }
 }
 
-/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv414wifi_country_t]
-#[derive(Default, Format)]
-pub struct WifiCountry {
-    /// Country code string.
-    pub cc: [u8; 3],
-    /// Start channel of the allowed 2.4GHz Wi-Fi channels
-    pub schan: u8,
-    /// Total channel number of the allowed 2.4GHz Wi-Fi channels
-    pub nchan: u8,
-    pub max_tx_power: i8,
-    /// Enum. Auto for 0, Manual for 1
-    pub policy: u8,
-}
-
 // ---------- WiFi Active Scan Time ----------
 #[derive(Default, Format)]
 pub struct ActiveScanTime {
@@ -213,8 +197,8 @@ impl ActiveScanTime {
     }
 }
 
-// ---------- WiFi Scan Time ----------
-// #[derive(Default, Format)]
+/// Aggregate of active & passive scan time per channel.
+/// [docs][https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv416wifi_scan_time_t)
 #[derive(Default)]
 pub struct ScanTime {
     pub active: ActiveScanTime,
@@ -286,12 +270,6 @@ impl ScanConfig {
     }
 }
 
-// #[derive(Format)]
-pub struct RpcRespWifiScanGetApRecords {
-    pub number: u32,
-    pub ap_records: Vec<WifiApRecord, 50>,
-}
-
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv418wifi_second_chan_t)
 #[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
 #[repr(u8)]
@@ -352,17 +330,36 @@ pub enum WifiAnt {
     Max = 2,
 }
 
+
+/// Structure describing Wi-Fi country-based regional restrictions.
+/// [docs][https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv414wifi_country_t]
+#[derive(Default, Format)]
+pub struct WifiCountry {
+    /// Country code string.
+    pub cc: [u8; 3],
+    /// Start channel of the allowed 2.4GHz Wi-Fi channels
+    pub schan: u8,
+    /// Total channel number of the allowed 2.4GHz Wi-Fi channels
+    pub nchan: u8,
+    pub max_tx_power: i8,
+    /// Enum. Auto for 0, Manual for 1
+    pub policy: u8,
+}
+
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv416wifi_bandwidth_t)
 #[derive(Clone, Copy, PartialEq, Default, Format, TryFromPrimitive)]
 #[repr(u8)]
 pub enum WifiBandwidth {
     #[default]
     HT20 = 0,
+    /// 20 Mhz
     BW20 = 1,
     BW_HT40 = 2,
+    /// 40 Mhz
     BW40 = 3,
     BW80 = 4,
     BW160 = 5,
+    /// 80 + 80 Mhz
     BW80_BW80 = 6,
 }
 
@@ -425,7 +422,6 @@ impl WifiApRecord {
                 1 => {
                     let (field_len, field_len_len) = decode_varint(&buf[i..])?;
                     i += field_len_len;
-                    // println!("BSSID field len: {:?}", field_len);
                     // println!("BSSID buf: {:?}", &buf[i..i + field_len as usize]);
 
                     if i + field_len as usize >= buf.len() {
@@ -440,7 +436,6 @@ impl WifiApRecord {
                 2 => {
                     let (field_len, field_len_len) = decode_varint(&buf[i..])?;
                     i += field_len_len;
-                    // println!("SSID field len: {:?}", field_len);
                     // println!("SSID buf: {:?}", &buf[i..i + field_len as usize]);
 
                     if i + field_len as usize >= buf.len() {

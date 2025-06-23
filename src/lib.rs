@@ -98,7 +98,8 @@ pub struct ParsedMsg<'a> {
     pub header: PayloadHeader,
     pub rpc: Rpc,
     pub data: &'a [u8],
-    pub rpc_raw: Option<RpcP>,
+    // pub rpc_raw: Option<RpcP>,
+    pub rpc_parsed: RpcP,
 }
 
 /// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
@@ -107,7 +108,7 @@ pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
     let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE])?;
     let total_size = header.len as usize + PL_HEADER_SIZE;
 
-    if total_size > buf.len() {
+    if total_size >= buf.len() {
         return Err(EspError::Capacity);
     }
 
@@ -116,47 +117,48 @@ pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
     let data = &rpc_buf[data_start_i..];
 
     // todo: Temp to get troubleshooting data to the micropb GH.
-    println!("RPC BUF: {:?}", rpc_buf);
+    // println!("RPC BUF: {:?}", rpc_buf);
     // println!("\n\n\n\nParsing msg..."); // todo tmep
 
     // Parsing the proto data from the generated mod.
     let mut decoder = PbDecoder::new(rpc_buf);
-    let mut rpc_proto = RpcP::default();
+    let mut rpc_parsed = RpcP::default();
 
     // todo: Until we sort out decode errors on repeated fields with micropb.
-    // rpc_proto
-    //     .decode(&mut decoder, rpc_buf.len())
-    //     .map_err(|_| EspError::Proto)?;
+    rpc_parsed
+        .decode(&mut decoder, rpc_buf.len())
+        .map_err(|_| EspError::Proto)?;
 
-    // Workaround to fall back to our native API, setting MicroPB's parse result to None, vice returning an error.
-    let mut rpc_proto_ = None;
-    match rpc_proto.decode(&mut decoder, rpc_buf.len()) {
-        Ok(_) => rpc_proto_ = Some(rpc_proto),
-        Err(e) => {
-            match e {
-                micropb::DecodeError::ZeroField => println!("ZF"),
-                micropb::DecodeError::UnexpectedEof => println!("Ueof"),
-                micropb::DecodeError::Deprecation => println!("Dep"),
-                micropb::DecodeError::UnknownWireType => println!("UWT"),
-                micropb::DecodeError::VarIntLimit => println!("Varlint"),
-                micropb::DecodeError::CustomField => println!("CustomF"),
-                micropb::DecodeError::Utf8 => println!("Utf"),
-                micropb::DecodeError::Capacity => {
-                    // println!("RPC buf len: {} Msg size (micropb): {}", rpc_buf.len(), rpc_proto.compute_size());
-                    println!("MIcropb capacity error");
-                }
-                micropb::DecodeError::WrongLen => println!("WrongLen"),
-                micropb::DecodeError::Reader(e2) => println!("Reader"),
-                _ => println!("Other"),
-            }
-            println!("Micropb decode error on: {:?}", rpc.msg_type);
-        }
-    }
+    // // Workaround to fall back to our native API, setting MicroPB's parse result to None, vice returning an error.
+    // let mut rpc_proto_ = None;
+    // match rpc_proto.decode(&mut decoder, rpc_buf.len()) {
+    //     Ok(_) => rpc_proto_ = Some(rpc_proto),
+    //     Err(e) => {
+    //         match e {
+    //             micropb::DecodeError::ZeroField => println!("ZF"),
+    //             micropb::DecodeError::UnexpectedEof => println!("Ueof"),
+    //             micropb::DecodeError::Deprecation => println!("Dep"),
+    //             micropb::DecodeError::UnknownWireType => println!("UWT"),
+    //             micropb::DecodeError::VarIntLimit => println!("Varlint"),
+    //             micropb::DecodeError::CustomField => println!("CustomF"),
+    //             micropb::DecodeError::Utf8 => println!("Utf"),
+    //             micropb::DecodeError::Capacity => {
+    //                 // println!("RPC buf len: {} Msg size (micropb): {}", rpc_buf.len(), rpc_proto.compute_size());
+    //                 println!("MIcropb capacity error");
+    //             }
+    //             micropb::DecodeError::WrongLen => println!("WrongLen"),
+    //             micropb::DecodeError::Reader(e2) => println!("Reader"),
+    //             _ => println!("Other"),
+    //         }
+    //         println!("Micropb decode error on: {:?}", rpc.msg_type);
+    //     }
+    // }
 
     Ok(ParsedMsg {
         header,
         rpc,
         data,
-        rpc_raw: rpc_proto_,
+        // rpc_raw: rpc_proto_,
+        rpc_parsed,
     })
 }

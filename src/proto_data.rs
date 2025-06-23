@@ -317,54 +317,7 @@ pub struct WifiStaList {
     pub num: i32,
 }
 
-// ---------- OTA ----------
-#[derive(Format)]
-pub struct RpcReqOtaBegin;
 
-#[derive(Format)]
-pub struct RpcRespOtaBegin {
-    pub resp: i32,
-}
-
-// #[derive(Format)]
-pub struct RpcReqOtaWrite {
-    pub ota_data: Vec<u8, MAX_DATA_SIZE>,
-}
-
-#[derive(Format)]
-pub struct RpcRespOtaWrite {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqOtaEnd;
-
-#[derive(Format)]
-pub struct RpcRespOtaEnd {
-    pub resp: i32,
-}
-
-// ---------- WiFi Power ----------
-#[derive(Format)]
-pub struct RpcReqWifiSetMaxTxPower {
-    pub power: i32,
-}
-
-#[derive(Format)]
-pub struct RpcRespWifiSetMaxTxPower {
-    pub resp: i32,
-}
-
-#[derive(Format)]
-pub struct RpcReqWifiGetMaxTxPower;
-
-#[derive(Format)]
-pub struct RpcRespWifiGetMaxTxPower {
-    pub power: i32,
-    pub resp: i32,
-}
-
-// ---------- Heartbeat ----------
 #[derive(Format)]
 pub struct RpcReqConfigHeartbeat {
     pub enable: bool,
@@ -416,13 +369,6 @@ impl RpcReqWifiInit {
     }
 }
 
-// #[derive(Format)]
-pub struct RpcRespWifiGetConfig {
-    pub resp: i32,
-    pub iface: i32,
-    pub cfg: WifiConfig,
-}
-
 // #[derive(Default, Format)]
 #[derive(Default)]
 pub struct RpcReqWifiScanStart {
@@ -439,10 +385,8 @@ impl RpcReqWifiScanStart {
     pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
         let mut i = 0;
 
-        let mut cfg_buf = [0; 50]; // ~22 with defaults.
+        let mut cfg_buf = [0; 30]; // Measured 22 with defaults.
         let cfg_len = self.config.to_bytes(&mut cfg_buf);
-
-        println!("Scan cfg len: {:?}", cfg_len); // todo: Use to set buf appropriately.
 
         write_rpc(buf, 1, Len, cfg_len as u64, &mut i);
         buf[i..i + cfg_len].copy_from_slice(&cfg_buf[..cfg_len]);
