@@ -1,5 +1,5 @@
 [package]
-name = "esp-hosted"
+name = "esp-hosted-gen"
 version = "0.1.0"
 edition = "2024"
 
