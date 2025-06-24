@@ -7,9 +7,11 @@ use defmt::{Format, println};
 use num_enum::TryFromPrimitive;
 
 use crate::{
-    EspError, copy_le, parse_le,
+    EspError,
+    ble::HciPkt,
+    copy_le, parse_le,
     rpc::{EndpointType, RpcEndpoint},
-    transport::{HciPkt, PacketType, RPC_EP_NAME_RSP, compute_checksum},
+    transport::{PacketType, RPC_EP_NAME_RSP, compute_checksum},
 };
 
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs

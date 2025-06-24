@@ -3,7 +3,7 @@
 use defmt::Format;
 use num_enum::TryFromPrimitive;
 
-use crate::EspError;
+use crate::{EspError, HciPkt};
 
 const PRIO_Q_SERIAL: u8 = 0;
 const PRIO_Q_BT: u8 = 1;
@@ -18,15 +18,6 @@ const SERIAL_IF_FILE: &str = "/dev/esps0";
 /* Endpoints registered must have same string length */
 pub(crate) const RPC_EP_NAME_RSP: &str = "RPCRsp";
 pub(crate) const RPC_EP_NAME_EVT: &str = "RPCEvt";
-
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
-#[repr(u8)]
-pub enum HciPkt {
-    Cmd = 0x01,
-    Acl = 0x02,
-    Sco = 0x03,
-    Evt = 0x04,
-}
 
 #[derive(Clone, Copy, PartialEq, Default, Format)]
 pub(crate) enum PacketType {

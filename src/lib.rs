@@ -28,17 +28,19 @@ mod rpc;
 mod transport;
 pub mod wifi;
 
+mod ble;
 mod esp_errors;
 pub mod proto;
 mod util;
 
+// pub use ble::{HciEvent, HciOpCode, HciPkt};
+pub use ble::*;
 use defmt::{Format, println};
 pub use header::{PayloadHeader, build_frame_ble};
 use micropb::{MessageDecode, MessageEncode, PbDecoder};
 use num_enum::TryFromPrimitive;
 pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP, *};
 pub use proto_data::RpcId;
-pub use transport::HciPkt;
 
 // use crate::esp_errors::EspCode;
 pub use crate::rpc::*;
