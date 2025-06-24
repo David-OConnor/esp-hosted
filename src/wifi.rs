@@ -330,7 +330,6 @@ pub enum WifiAnt {
     Max = 2,
 }
 
-
 /// Structure describing Wi-Fi country-based regional restrictions.
 /// [docs][https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv414wifi_country_t]
 #[derive(Default, Format)]
@@ -661,6 +660,20 @@ where
     Ok(())
 }
 
+/// Start WiFi according to current configuration If mode is WIFI_MODE_STA, it creates station control block and starts station If mode is
+/// WIFI_MODE_AP, it creates soft-AP control block and starts soft-AP If mode is WIFI_MODE_APSTA, it creates soft-AP and station control
+/// block and starts soft-AP and station If mode is WIFI_MODE_NAN, it creates NAN control block and starts NAN.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv430esp_wifi_set_promiscuous_rx_cb21wifi_promiscuous_cb_t))
+pub fn set_promiscuous<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    // todo hmmm. missing the payload type for this and related settings. And in IDF, it requires a CB.
+    // write_empty_msg(buf, &mut write, uid, RpcId::ReqWifiSetPromiscuousFilter);
+    // write_empty_msg(buf, write, uid, RpcId::ReqWifiSetPromiscuousCtrlFilter);
+    write_empty_msg(buf, write, uid, RpcId::ReqWifiSetPromiscuous)
+}
+
 /// Scan all available APs.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv419esp_wifi_scan_startPK18wifi_scan_config_tb)
 pub fn scan_start<W>(
@@ -692,7 +705,71 @@ where
     write_empty_msg(buf, write, uid, RpcId::ReqWifiScanStop)
 }
 
-/// Set the supported WiFi protocols for the specified interface.
+#[derive(Format)]
+pub struct Protocols {
+    /// 802.11b
+    pub p_11b: bool,
+    /// 802.11g
+    pub p_11g: bool,
+    /// 802.11n
+    pub p_11n: bool,
+    /// Long range
+    pub p_lr: bool,
+    /// 802.11ax
+    pub p_11ax: bool,
+    /// 802.11ax
+    pub wps: bool,
+    /// 802.11a
+    pub p_11a: bool,
+    pub p_11ac: bool,
+}
+
+impl Default for Protocols {
+    /// This matches the ESP default.
+    fn default() -> Self {
+        Self {
+            p_11b: true,
+            p_11g: true,
+            p_11n: true,
+            p_lr: false,
+            p_11ax: false,
+            wps: false,
+            p_11a: false,
+            p_11ac: false,
+            // todo: 802.1ac and ax A/R. 0x20 and 0x40 rep
+        }
+    }
+}
+
+impl Protocols {
+    pub fn to_byte(&self) -> u8 {
+        (self.p_11b as u8)
+            | ((self.p_11g as u8) << 1)
+            | ((self.p_11n as u8) << 2)
+            | ((self.p_lr as u8) << 3)
+            | ((self.p_11ac as u8) << 5)
+            | ((self.p_11ax as u8) << 6)
+    }
+
+    pub fn from_byte(b: u8) -> Self {
+        Self {
+            p_11b: b & 1 != 0,
+            p_11g: (b >> 1) & 1 != 0,
+            p_11n: (b >> 2) & 1 != 0,
+            p_lr: (b >> 3) & 1 != 0,
+            p_11ax: (b >> 4) & 1 != 0,
+            wps: (b >> 5) & 1 != 0,
+            p_11a: false,
+            p_11ac: false,
+            // todo?
+            // p_11a: (b >> 8) & 1 != 0,
+            // p_11ac: (b >> 9) & 1 != 0,
+        }
+    }
+}
+
+/// Set the supported WiFi protocols for the specified interface. The default protocol is
+/// (WIFI_PROTOCOL_11B|WIFI_PROTOCOL_11G|WIFI_PROTOCOL_11N).
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv422esp_wifi_set_protocols16wifi_interface_tP16wifi_protocols_t)
 /// interface (ifx) should be 0 for Station, and 1 for Ap.
 /// Bitmap: e.g 1 | 2 | 4; = 11B | 11G | 11N. Note that this is the default.
@@ -701,7 +778,7 @@ pub fn set_protocol<W>(
     mut write: W,
     uid: u32,
     ifx: InterfaceType,
-    bitmap: i32,
+    protocols: &Protocols,
 ) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
@@ -712,7 +789,13 @@ where
     let mut i = 0;
 
     write_rpc(&mut data, 1, WireType::Varint, ifx as u64, &mut i);
-    write_rpc(&mut data, 2, WireType::Varint, bitmap as u64, &mut i);
+    write_rpc(
+        &mut data,
+        2,
+        WireType::Varint,
+        protocols.to_byte() as u64,
+        &mut i,
+    );
 
     let frame_len = setup_rpc(buf, &rpc, &data[0..i]);
     write(&buf[..frame_len])?;

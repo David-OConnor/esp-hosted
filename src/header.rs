@@ -3,13 +3,13 @@
 
 use core::sync::atomic::{AtomicU16, Ordering};
 
-use defmt::Format;
+use defmt::{Format, println};
 use num_enum::TryFromPrimitive;
 
 use crate::{
     EspError, copy_le, parse_le,
     rpc::{EndpointType, RpcEndpoint},
-    transport::{PacketType, RPC_EP_NAME_RSP, compute_checksum},
+    transport::{HciPkt, PacketType, RPC_EP_NAME_RSP, compute_checksum},
 };
 
 pub(crate) const PL_HEADER_SIZE: usize = 12; // Verified from ESP docs
@@ -82,16 +82,19 @@ pub struct PayloadHeader {
 }
 
 impl PayloadHeader {
-    pub fn new(if_type: InterfaceType, pkt_type: PacketType, payload_len: usize) -> Self {
+    pub fn new(
+        if_type: InterfaceType,
+        if_num: u8,
+        pkt_type: PacketType,
+        payload_len: usize,
+    ) -> Self {
         // Len is the number of bytes following the header. (all)
-        let len = (TLV_SIZE + payload_len) as u16;
-
         Self {
             if_type,
             // todo: should we pass if_num as a param? 0 to start?
-            if_num: 0,
+            if_num,
             flags: 0,
-            len,
+            len: payload_len as u16,
             offset: PL_HEADER_SIZE as u16,
             // Computed after the entire frame is constructed. Must be set to 0 for
             // now, as this goes into the checksum calculation.
@@ -101,6 +104,7 @@ impl PayloadHeader {
             pkt_type,
         }
     }
+
     /// Serialize into the 12-byte packed representation
     pub fn to_bytes(&self) -> [u8; PL_HEADER_SIZE] {
         let mut buf = [0; PL_HEADER_SIZE];
@@ -119,7 +123,7 @@ impl PayloadHeader {
         buf[10] = self.throttle_cmd; // todo: QC if you need a shift.
 
         // byte 11: union field
-        buf[11] = self.pkt_type as u8;
+        buf[11] = self.pkt_type.val();
 
         buf
     }
@@ -138,7 +142,7 @@ impl PayloadHeader {
         let seq_num = parse_le!(buf, u16, 8..10);
 
         let throttle_cmd = buf[10] & 3;
-        let pkt_type = buf[11].try_into().map_err(|_| EspError::InvalidData)?;
+        let pkt_type = PacketType::from_byte(buf[11])?;
 
         Ok(Self {
             if_type,
@@ -157,7 +161,7 @@ impl PayloadHeader {
 /// Builds the entire frame sent and received over the wire protocol. See `esp_hosted_protocol.md`
 /// for details on how this is constructed.
 /// Outputs total bytes in the frame.
-pub(crate) fn build_frame(out: &mut [u8], payload: &[u8]) -> usize {
+pub(crate) fn build_frame_wifi(out: &mut [u8], payload: &[u8]) -> usize {
     // `payload` here is all remaining bytes, including RPC metadata.
     let payload_len = payload.len();
 
@@ -165,18 +169,15 @@ pub(crate) fn build_frame(out: &mut [u8], payload: &[u8]) -> usize {
     let endpoint_value = RpcEndpoint::CtrlResp.as_bytes();
     let endpoint_len = endpoint_value.len() as u16;
 
-    // For sending from host, always use PRIV_EVENT_INIT.
-    // let packet_type = PacketType::ESP_PRIV_EVENT_INIT;
-    let packet_type = PacketType::None;
-
-    let payload_header = PayloadHeader::new(
-        // todo: Serial? Sta? What should IfType be?
+    let hdr = PayloadHeader::new(
         InterfaceType::Serial,
-        packet_type,
-        payload_len,
+        0,
+        PacketType::None,
+        payload_len + TLV_SIZE,
     );
-    out[..PL_HEADER_SIZE].copy_from_slice(&payload_header.to_bytes());
+    out[..PL_HEADER_SIZE].copy_from_slice(&hdr.to_bytes());
 
+    // Add the TLV data.
     let mut i = PL_HEADER_SIZE;
 
     out[i] = EndpointType::EndpointName as _;
@@ -203,5 +204,30 @@ pub(crate) fn build_frame(out: &mut [u8], payload: &[u8]) -> usize {
     let pl_checksum = compute_checksum(&out[..i]);
     copy_le!(out, pl_checksum, 6..8);
 
+    i
+}
+
+/// Public, since the BLE interface is more raw, relying on HCI from the host.
+pub fn build_frame_ble(out: &mut [u8], pkt_type: HciPkt, hci_payload: &[u8]) -> usize {
+    // `payload` here is all remaining bytes, including RPC metadata.
+    let payload_len = hci_payload.len();
+
+    let packet_type = PacketType::None;
+
+    let mut hdr = PayloadHeader::new(InterfaceType::Hci, 0, packet_type, payload_len);
+    hdr.pkt_type = PacketType::Hci(pkt_type);
+
+    out[..PL_HEADER_SIZE].copy_from_slice(&hdr.to_bytes());
+
+    let mut i = PL_HEADER_SIZE;
+
+    out[i..i + payload_len].copy_from_slice(hci_payload);
+    i += payload_len;
+
+    // system_design...: "**Checksum Coverage**: The checksum covers the **entire frame** including:
+    // 1. Complete `esp_payload_header` (with checksum field set to 0 during calculation)
+    // 2. Complete payload data"
+    let pl_checksum = compute_checksum(&out[..i]);
+    copy_le!(out, pl_checksum, 6..8);
     i
 }

@@ -3,6 +3,8 @@
 use defmt::Format;
 use num_enum::TryFromPrimitive;
 
+use crate::EspError;
+
 const PRIO_Q_SERIAL: u8 = 0;
 const PRIO_Q_BT: u8 = 1;
 const PRIO_Q_OTHERS: u8 = 2;
@@ -17,35 +19,44 @@ const SERIAL_IF_FILE: &str = "/dev/esps0";
 pub(crate) const RPC_EP_NAME_RSP: &str = "RPCRsp";
 pub(crate) const RPC_EP_NAME_EVT: &str = "RPCEvt";
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
-pub(crate) enum H_FLOW_CTRL {
-    Nc = 0,
-    On = 1,
-    Off = 2,
+pub enum HciPkt {
+    Cmd = 0x01,
+    Acl = 0x02,
+    Sco = 0x03,
+    Evt = 0x04,
 }
 
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
-#[repr(u8)]
-pub(crate) enum ESP_PRIV_PACKET_TYPE {
-    ESP_PACKET_TYPE_EVENT = 0x33,
-}
-
-#[derive(Clone, Copy, PartialEq, TryFromPrimitive)]
-#[repr(u8)]
-pub(crate) enum ESP_PRIV_EVENT_TYPE {
-    ESP_PRIV_EVENT_INIT = 0x22,
-}
-
-#[derive(Clone, Copy, PartialEq, Default, TryFromPrimitive, Format)]
-#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Default, Format)]
 pub(crate) enum PacketType {
     #[default]
-    None = 0, // todo: QC this!
+    None,
     /// It appears that this is only used from the Slave
-    ESP_PACKET_TYPE_EVENT = 0x33,
+    ESP_PACKET_TYPE_EVENT,
     /// It appears that this is always the type sent by the host.
-    ESP_PRIV_EVENT_INIT = 0x22,
+    ESP_PRIV_EVENT_INIT,
+    Hci(HciPkt),
+}
+
+impl PacketType {
+    pub fn val(&self) -> u8 {
+        match self {
+            Self::None => 0,
+            Self::ESP_PACKET_TYPE_EVENT => 0x33,
+            Self::ESP_PRIV_EVENT_INIT => 0x22,
+            Self::Hci(v) => *v as u8,
+        }
+    }
+
+    pub fn from_byte(b: u8) -> Result<Self, EspError> {
+        Ok(match b {
+            0 => Self::None,
+            0x33 => Self::ESP_PACKET_TYPE_EVENT,
+            0x22 => Self::ESP_PACKET_TYPE_EVENT,
+            _ => Self::Hci(HciPkt::try_from(b).map_err(|_| EspError::InvalidData)?),
+        })
+    }
 }
 
 #[repr(u8)]

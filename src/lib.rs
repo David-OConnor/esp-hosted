@@ -3,7 +3,24 @@
 #![allow(non_camel_case_types)]
 #![allow(static_mut_refs)]
 
-//! An interface for interacting with ESP-Hosted-MCU firmware, via UART.
+//! # ESP Hosted
+//! For connecting to an [ESP-Hosted-MCU](https://!github.com/espressif/esp-hosted-mcu) from a Host MCU with firmware
+//! written in rust.
+//!
+//! Compatible with ESP-Hosted-MCU 2.0.6 and ESP IDF 5.4.1 (And likely anything newer), and any host MCU and architecture.
+//! For details on ESP-HOSTED-MCU's protocol see
+//! [this document](/esp_hosted_protocol.md). For how to use the commands in the library effectively, reference the
+//! [ESP32 IDF API docs](https://!docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html)
+//!
+//! This library includes two approaches: A high-level API using data structures from this library, and full access to
+//! the native protobuf structures. The native API is easier to work with, but only implements a small portion of functionality.
+//! The protobuf API is complete, but more cumbersome.
+//!
+//! This library does not use an allocator. This makes integrating it simple, but it uses a significant amount of flash
+//! for static buffers. These are configured in the `build_proto/src/main.rs` script on a field-by-field basis.
+//!
+//! It's transport agnostic; compatible with SPI, SDIO, and UART. It does this by allowing the application firmware to pass
+//! a generic `write` function, and reads are performed as functions that act on buffers passed by the firmware.
 
 mod header;
 pub mod proto_data;
@@ -16,18 +33,20 @@ pub mod proto;
 mod util;
 
 use defmt::{Format, println};
-pub use header::PayloadHeader;
+pub use header::{PayloadHeader, build_frame_ble};
 use micropb::{MessageDecode, MessageEncode, PbDecoder};
 use num_enum::TryFromPrimitive;
 pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP, *};
 pub use proto_data::RpcId;
+pub use transport::HciPkt;
 
 // use crate::esp_errors::EspCode;
 pub use crate::rpc::*;
 use crate::{
-    header::{HEADER_SIZE, PL_HEADER_SIZE},
+    header::{HEADER_SIZE, InterfaceType, PL_HEADER_SIZE},
     proto_data::RpcReqConfigHeartbeat,
     rpc::{Rpc, setup_rpc},
+    transport::PacketType,
     wifi::WifiApRecord,
 };
 
@@ -94,7 +113,7 @@ where
     Ok(())
 }
 
-pub struct ParsedMsg<'a> {
+pub struct WifiMsg<'a> {
     pub header: PayloadHeader,
     pub rpc: Rpc,
     pub data: &'a [u8],
@@ -102,14 +121,34 @@ pub struct ParsedMsg<'a> {
     pub rpc_parsed: RpcP,
 }
 
+pub struct HciMsg<'a> {
+    pub data: &'a [u8],
+}
+
+pub enum MsgParsed<'a> {
+    Wifi(WifiMsg<'a>),
+    Hci(HciMsg<'a>),
+}
+
 /// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
 /// the whole message received.
-pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
+pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE])?;
     let total_size = header.len as usize + PL_HEADER_SIZE;
 
     if total_size >= buf.len() {
         return Err(EspError::Capacity);
+    }
+
+    if header.if_type == InterfaceType::Hci {
+        return Ok(MsgParsed::Hci(HciMsg {
+            data: &buf[PL_HEADER_SIZE..],
+        }));
+    }
+
+    if HEADER_SIZE >= total_size {
+        println!("Error: Invalid RPC packet: {:?}", buf[0..24]);
+        return Err(EspError::InvalidData);
     }
 
     let rpc_buf = &buf[HEADER_SIZE..total_size];
@@ -154,11 +193,11 @@ pub fn parse_msg(buf: &[u8]) -> Result<ParsedMsg, EspError> {
     //     }
     // }
 
-    Ok(ParsedMsg {
+    Ok(MsgParsed::Wifi(WifiMsg {
         header,
         rpc,
         data,
         // rpc_raw: rpc_proto_,
         rpc_parsed,
-    })
+    }))
 }

@@ -10,7 +10,7 @@ use num_enum::TryFromPrimitive;
 pub use crate::proto_data::RpcId;
 use crate::{
     EspError, RpcP,
-    header::build_frame,
+    header::build_frame_wifi,
     proto_data::EventHeartbeat,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
     wifi::WifiApRecord,
@@ -242,7 +242,7 @@ pub fn setup_rpc(buf: &mut [u8], rpc: &Rpc, data: &[u8]) -> usize {
     let mut i = 0;
     i += rpc.to_bytes(&mut rpc_buf, data);
 
-    build_frame(buf, &rpc_buf[..i])
+    build_frame_wifi(buf, &rpc_buf[..i])
 }
 
 /// Sets up an RPC command to write using the automatic protbuf decoding from micropb. This is flexible, and
@@ -253,11 +253,11 @@ pub fn setup_rpc_proto(buf: &mut [u8], message: RpcP) -> Result<usize, EspError>
     let mut encoder = PbEncoder::new(&mut rpc_buf);
     message.encode(&mut encoder).map_err(|_| EspError::Proto)?;
 
-    Ok(build_frame(buf, &rpc_buf[..rpc_buf.len()]))
+    Ok(build_frame_wifi(buf, &rpc_buf[..rpc_buf.len()]))
 }
 
 /// Write an automatically-decoded protobuf message directly.
-pub fn write_rpc_raw<W>(buf: &mut [u8], mut write: W, msg: RpcP) -> Result<(), EspError>
+pub fn write_rpc_proto<W>(buf: &mut [u8], mut write: W, msg: RpcP) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {

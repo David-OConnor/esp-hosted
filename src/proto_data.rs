@@ -317,7 +317,6 @@ pub struct WifiStaList {
     pub num: i32,
 }
 
-
 #[derive(Format)]
 pub struct RpcReqConfigHeartbeat {
     pub enable: bool,
@@ -354,10 +353,9 @@ impl RpcReqWifiInit {
         let v = WireType::Varint;
 
         // Total size came out to 50 for a test case.
-        let mut buf_init_cfg = [0; 80]; // todo: Not a great place for this.
+        let mut buf_init_cfg = [0; 80]; // 50 from measurement.
 
         let cfg_len = self.cfg.to_bytes(&mut buf_init_cfg);
-        println!("Wifi init cfg len: {:?}", cfg_len);
 
         let mut i = 0;
         write_rpc(buf, 1, WireType::Len, cfg_len as u64, &mut i);
