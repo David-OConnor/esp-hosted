@@ -1,6 +1,6 @@
 //! Minimal HCI support for Bluetooth operations
 
-use defmt::{Format, Formatter};
+use defmt::{Format, Formatter, println};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
 
@@ -8,8 +8,10 @@ use crate::EspError;
 
 // todo: Experiment; set these A/R.
 const MAX_HCI_EVS: usize = 8;
-const MAX_NUM_ADV_DATA: usize = 16;
+const MAX_NUM_ADV_DATA: usize = 8;
 const MAX_NUM_ADV_REPS: usize = 4;
+
+const HCI_TX_MAX_LEN: usize = 15; // todo: Raise A/R.
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
@@ -73,7 +75,7 @@ impl<'a> Format for AdvReport<'a> {
         );
 
         // Start the parsed-data list.
-        defmt::write!(f, ", data_parsed: [");
+        defmt::write!(f, ", data_parsed: \n[");
 
         // Iterate over every AdvData entry, separated by commas.
         let mut first = true;
@@ -90,9 +92,23 @@ impl<'a> Format for AdvReport<'a> {
     }
 }
 
+/// Build helper to push (pkt_type, opcode, params) into an ESP-Hosted frame
+pub fn make_hci_cmd(opcode: HciOpCode, params: &[u8]) -> ([u8; HCI_TX_MAX_LEN], usize) {
+    let mut payload = [0; HCI_TX_MAX_LEN];
+
+    // payload[0] = HciPkt::Cmd as u8;
+    payload[0..2].copy_from_slice(&(opcode as u16).to_le_bytes());
+    payload[2] = params.len() as u8;
+    payload[3..3 + params.len()].copy_from_slice(params);
+
+    println!("Writing HCI payload: {:?}", payload[..3 + params.len()]);
+
+    (payload, 3 + params.len())
+}
+
 pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
     use heapless::Vec;
-    let mut out = Vec::<AdvData, 16>::new();
+    let mut out = Vec::<AdvData, MAX_NUM_ADV_DATA>::new();
 
     while !d.is_empty() {
         let len = d[0] as usize;
@@ -284,6 +300,7 @@ pub fn parse_hci_events(mut buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, Es
 
             // ───────────────────────────── default / unknown ────────────────
             _ => {
+                println!("\n\nUnknown packet: {:?}\n\n", buf);
                 out.push(HciEvent::Unknown { evt, params }).ok();
             }
         }

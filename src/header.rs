@@ -3,7 +3,7 @@
 
 use core::sync::atomic::{AtomicU16, Ordering};
 
-use defmt::{Format, println};
+use defmt::Format;
 use num_enum::TryFromPrimitive;
 
 use crate::{
@@ -32,7 +32,7 @@ static SEQ_NUM: AtomicU16 = AtomicU16::new(0);
 #[repr(u8)]
 /// See ESP-Hosted-MCU readme, section 7.2
 /// /// [official enum](https://github.com/espressif/esp-hosted-mcu/blob/634e51233af2f8124dfa8118747f97f8615ea4a6/common/esp_hosted_interface.h)
-pub(crate) enum InterfaceType {
+pub enum InterfaceType {
     Invalid = 0,
     Sta = 1,
     Ap = 2,

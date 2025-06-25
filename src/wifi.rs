@@ -178,11 +178,14 @@ impl InitConfig {
     }
 }
 
-// ---------- WiFi Active Scan Time ----------
 #[derive(Default, Format)]
+/// Range of active scan times per channel.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv423wifi_active_scan_time_t)
 pub struct ActiveScanTime {
-    /// 0 means use built-ins.
+    /// Minimum active scan time per channel, units: millisecond. 0 means use built-ins.
     pub min: u32,
+    /// Maximum active scan time per channel, units: millisecond, values above 1500 ms may cause
+    /// station to disconnect from AP and are not recommended.
     pub max: u32,
 }
 
@@ -202,7 +205,8 @@ impl ActiveScanTime {
 #[derive(Default)]
 pub struct ScanTime {
     pub active: ActiveScanTime,
-    /// 0 means use default of 360ms.
+    /// Passive scan time per channel, units: millisecond, values above 1500 ms may
+    /// cause station to disconnect from AP and are not recommended.
     pub passive: u32,
 }
 
@@ -224,20 +228,30 @@ impl ScanTime {
     }
 }
 
-// ---------- WiFi Scan Config ----------
-// #[derive(Default, Format)]
+#[derive(Clone, Copy, PartialEq, Default, Format)]
+#[repr(u8)]
+pub enum ScanType {
+    #[default]
+    Active = 0,
+    Passive = 1,
+}
+
+/// Parameters for an SSID scan.
+/// Note: If setting most of these values to 0 or empty Vecs, ESP will use its default settings.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv418wifi_scan_config_t)
 #[derive(Default)]
 pub struct ScanConfig {
     /// Can limit to a specific SSID or MAC. Empty means no filter.
     pub ssid: Vec<u8, 33>,
     pub bssid: Vec<u8, 6>,
-    /// 0 means no filter.
-    pub channel: u32,
+    /// Channel, scan the specific channel. 0 means no filter.
+    pub channel: u8,
+    /// Enable it to scan AP whose SSID is hidden
     pub show_hidden: bool,
-    /// 0 means active. 1 is passive. 2 is follow.
-    pub scan_type: i32,
+    /// Scan type, active or passive. 0 means active. 1 is passive. 2 is follow.
+    pub scan_type: ScanType,
     pub scan_time: ScanTime,
-    pub home_chan_dwell_time: u32,
+    pub home_chan_dwell_time: u8,
 }
 
 impl ScanConfig {
@@ -415,7 +429,7 @@ impl WifiApRecord {
             let (tag, tag_len) = decode_varint(&buf[i..])?;
             i += tag_len;
 
-            let (field, wire_type) = decode_tag(tag as u16);
+            let (field, _wire_type) = decode_tag(tag as u16);
 
             match field {
                 1 => {
@@ -442,7 +456,7 @@ impl WifiApRecord {
                     }
 
                     result.ssid = Vec::<_, 33>::from_slice(&buf[i..i + field_len as usize])
-                        .map_err(|e| EspError::InvalidData)?;
+                        .map_err(|_| EspError::InvalidData)?;
                     i += field_len as usize;
                 }
                 3 => {
@@ -505,8 +519,6 @@ impl WifiApRecord {
                 _ => {
                     println!("Unparsed field: {:?}", field);
                 }
-
-                _ => (),
             }
         }
 
@@ -539,7 +551,7 @@ pub enum WifiMode {
 /// WIFI_MODE_AP, it creates soft-AP control block and starts soft-AP If mode is WIFI_MODE_APSTA, it creates soft-AP and station control
 /// block and starts soft-AP and station If mode is WIFI_MODE_NAN, it creates NAN control block and starts NAN.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv414esp_wifi_startv))
-pub fn start<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn start<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
@@ -550,7 +562,7 @@ where
 /// it stops soft-AP and frees soft-AP control block If mode is WIFI_MODE_APSTA, it stops station/soft-AP and frees
 /// station/soft-AP control block If mode is WIFI_MODE_NAN, it stops NAN and frees NAN control block.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv413esp_wifi_stopv)
-pub fn stop<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn stop<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
@@ -559,7 +571,7 @@ where
 
 /// Get number of APs found in last scan.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv424esp_wifi_scan_get_ap_numP8uint16_t)
-pub fn scan_get_ap_num<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn scan_get_ap_num<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
@@ -568,7 +580,7 @@ where
 
 /// Get one AP record from the scanned AP list.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv428esp_wifi_scan_get_ap_recordsP8uint16_tP16wifi_ap_record_t)
-pub fn scan_get_ap_record<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn scan_get_ap_record<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
@@ -599,14 +611,14 @@ where
     Ok(())
 }
 
-pub fn ap_get_sta_list<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn ap_get_sta_list<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
     write_empty_msg(buf, write, uid, RpcId::ReqWifiApGetStaList)
 }
 
-pub fn get_mode<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn get_mode<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
@@ -660,18 +672,195 @@ where
     Ok(())
 }
 
-/// Start WiFi according to current configuration If mode is WIFI_MODE_STA, it creates station control block and starts station If mode is
-/// WIFI_MODE_AP, it creates soft-AP control block and starts soft-AP If mode is WIFI_MODE_APSTA, it creates soft-AP and station control
-/// block and starts soft-AP and station If mode is WIFI_MODE_NAN, it creates NAN control block and starts NAN.
-/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv430esp_wifi_set_promiscuous_rx_cb21wifi_promiscuous_cb_t))
-pub fn set_promiscuous<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+/// Promiscuous frame type.
+///
+/// Passed to promiscuous mode RX callback to indicate the type of parameter in the buffer.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv427wifi_promiscuous_pkt_type_t)
+#[derive(Clone, Copy, PartialEq, Format)]
+#[repr(u8)]
+pub enum PromiscuousPktType {
+    /// Management frame
+    Mgmt = 0,
+    /// Control frame
+    Ctrl = 1,
+    /// Data frame
+    Data = 2,
+    /// Other type, such as MIMO etc.
+    Misc = 3,
+}
+
+#[derive(Format, Default)]
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#c.WIFI_PROMIS_FILTER_MASK_ALL)
+pub struct PromiscuousFilter {
+    pub mgmt: bool,
+    pub ctrl: bool,
+    pub data: bool,
+    pub misc: bool,
+    pub data_mpdu: bool,
+    pub data_ampdu: bool,
+    pub fcsfail: bool,
+}
+
+impl PromiscuousFilter {
+    pub fn val(&self) -> u32 {
+        let mut result = 0;
+        if self.mgmt {
+            result |= 1 << 0;
+        }
+        if self.ctrl {
+            result |= 1 << 1;
+        }
+        if self.data {
+            result |= 1 << 2;
+        }
+        if self.misc {
+            result |= 1 << 3;
+        }
+        if self.data_mpdu {
+            result |= 1 << 4;
+        }
+        if self.data_ampdu {
+            result |= 1 << 5;
+        }
+        if self.fcsfail {
+            result |= 1 << 6;
+        }
+        result
+    }
+}
+
+#[derive(Format, Default)]
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#c.WIFI_PROMIS_CTRL_FILTER_MASK_ALL)
+pub struct PromiscuousCtrlFilter {
+    pub wrapper: bool,
+    pub bar: bool,
+    pub ba: bool,
+    pub pspoll: bool,
+    pub rts: bool,
+    pub cts: bool,
+    pub ack: bool,
+    pub cfend: bool,
+    pub cfendack: bool,
+}
+
+impl PromiscuousCtrlFilter {
+    pub fn val(&self) -> u32 {
+        let mut result = 0;
+        if self.wrapper {
+            result |= 1 << 0;
+        }
+        if self.bar {
+            result |= 1 << 1;
+        }
+        if self.ba {
+            result |= 1 << 2;
+        }
+        if self.pspoll {
+            result |= 1 << 3;
+        }
+        if self.rts {
+            result |= 1 << 4;
+        }
+        if self.cts {
+            result |= 1 << 5;
+        }
+        if self.ack {
+            result |= 1 << 6;
+        }
+        if self.cfend {
+            result |= 1 << 7;
+        }
+        if self.cfendack {
+            result |= 1 << 8;
+        }
+        result
+    }
+}
+
+/// Enable the promiscuous mode, and set its filter.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv424esp_wifi_set_promiscuousb)
+pub fn set_promiscuous<W>(
+    buf: &mut [u8],
+    mut write: W,
+    uid: u32,
+    enabled: bool,
+    filter: &PromiscuousFilter,
+    ctrl_filter: Option<&PromiscuousCtrlFilter>,
+) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {
-    // todo hmmm. missing the payload type for this and related settings. And in IDF, it requires a CB.
-    // write_empty_msg(buf, &mut write, uid, RpcId::ReqWifiSetPromiscuousFilter);
-    // write_empty_msg(buf, write, uid, RpcId::ReqWifiSetPromiscuousCtrlFilter);
-    write_empty_msg(buf, write, uid, RpcId::ReqWifiSetPromiscuous)
+    // todo: Where to handle setting the CB? Doesn't map neatly to RPC.
+
+    // Enable or disable
+    let rpc = Rpc::new_req(RpcId::ReqWifiSetPromiscuous, uid);
+
+    let mut data = [0; 6];
+
+    let mut i = 0;
+    write_rpc(&mut data, 1, WireType::Varint, enabled as u64, &mut i);
+
+    let frame_len = setup_rpc(buf, &rpc, &data[..i]);
+    write(&buf[..frame_len])?;
+
+    // Set its filter. This, and the ctrl filter, and single-field structs.
+    let rpc = Rpc::new_req(RpcId::ReqWifiSetPromiscuousFilter, uid);
+
+    let mut i = 0;
+    // Same buf as enable/disable.
+
+    // todo: We assume 1 byte now for each filter. This is temp.
+    write_rpc(&mut data, 1, WireType::Len, 1, &mut i);
+    write_rpc(&mut data, 1, WireType::Varint, 1, &mut i); // Len of the struct.
+
+    write_rpc(&mut data, 1, WireType::Varint, filter.val() as u64, &mut i);
+
+    let frame_len = setup_rpc(buf, &rpc, &data[..i]);
+    write(&buf[..frame_len])?;
+
+    // Set its ctrl-mode filter A/R
+    if let Some(f) = ctrl_filter {
+        let rpc = Rpc::new_req(RpcId::ReqWifiSetPromiscuousCtrlFilter, uid);
+
+        let mut i = 0;
+
+        write_rpc(&mut data, 1, WireType::Len, 1, &mut i);
+        write_rpc(&mut data, 1, WireType::Varint, 1, &mut i); // Len of the struct.
+
+        write_rpc(&mut data, 1, WireType::Varint, f.val() as u64, &mut i);
+
+        let frame_len = setup_rpc(buf, &rpc, &data[..i]);
+        write(&buf[..frame_len])?;
+    }
+
+    Ok(())
+}
+
+/// Get the promiscuous mode.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv424esp_wifi_get_promiscuousPb)
+pub fn get_promiscuous<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    write_empty_msg(buf, write, uid, RpcId::ReqWifiGetPromiscuous)
+}
+
+/// Get the promiscuous filter.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv431esp_wifi_get_promiscuous_filterP25wifi_promiscuous_filter_t)
+pub fn get_promiscuous_filter<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    write_empty_msg(buf, write, uid, RpcId::ReqWifiGetPromiscuousFilter)
+}
+
+/// Get the subtype filter of the control packet in promiscuous mode.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv436esp_wifi_get_promiscuous_ctrl_filterP25wifi_promiscuous_filter_t)
+pub fn get_promiscuous_ctrl_filter<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    write_empty_msg(buf, write, uid, RpcId::ReqWifiGetPromiscuousCtrlFilter)
 }
 
 /// Scan all available APs.
@@ -698,7 +887,7 @@ where
 
 /// Stop the scan in process.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv418esp_wifi_scan_stopv)
-pub fn scan_stop<W>(buf: &mut [u8], mut write: W, uid: u32) -> Result<(), EspError>
+pub fn scan_stop<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
 where
     W: FnMut(&[u8]) -> Result<(), EspError>,
 {

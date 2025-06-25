@@ -29,7 +29,7 @@ pub enum RpcPayload {
 }
 
 impl Format for RpcPayload {
-    fn format(&self, fmt: Formatter<'_>) {
+    fn format(&self, _fmt: Formatter<'_>) {
         // todo: Temp  until we sort out the Vec problem.
         // match self {
         //     Self::EventHeartbeat(_) => (),
@@ -93,12 +93,12 @@ impl Rpc {
     /// Returns (Self, data start i, data len expected).
     pub fn from_bytes(buf: &[u8]) -> Result<(Self, usize, usize), EspError> {
         // Skipping msg type tag at byte 0.
-        let msg_type = buf[1].try_into().map_err(|e| EspError::InvalidData)?;
+        let msg_type = buf[1].try_into().map_err(|_| EspError::InvalidData)?;
 
         let (rpc_id, rpc_id_size) = decode_varint(&buf[3..])?;
         let msg_id = (rpc_id as u16)
             .try_into()
-            .map_err(|e| EspError::InvalidData)?;
+            .map_err(|_| EspError::InvalidData)?;
 
         let mut i = 3 + rpc_id_size;
 

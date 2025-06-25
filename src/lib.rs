@@ -37,9 +37,8 @@ mod util;
 pub use ble::*;
 use defmt::{Format, println};
 pub use header::{PayloadHeader, build_frame_ble};
-use micropb::{MessageDecode, MessageEncode, PbDecoder};
-use num_enum::TryFromPrimitive;
-pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP, *};
+use micropb::{MessageDecode, PbDecoder};
+pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP};
 pub use proto_data::RpcId;
 
 // use crate::esp_errors::EspCode;
@@ -47,9 +46,6 @@ pub use crate::rpc::*;
 use crate::{
     header::{HEADER_SIZE, InterfaceType, PL_HEADER_SIZE},
     proto_data::RpcReqConfigHeartbeat,
-    rpc::{Rpc, setup_rpc},
-    transport::PacketType,
-    wifi::WifiApRecord,
 };
 
 #[macro_export]

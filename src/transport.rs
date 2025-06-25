@@ -1,7 +1,6 @@
 //! From `esp_hosted_transport.h`
 
 use defmt::Format;
-use num_enum::TryFromPrimitive;
 
 use crate::{EspError, HciPkt};
 
@@ -20,7 +19,7 @@ pub(crate) const RPC_EP_NAME_RSP: &str = "RPCRsp";
 pub(crate) const RPC_EP_NAME_EVT: &str = "RPCEvt";
 
 #[derive(Clone, Copy, PartialEq, Default, Format)]
-pub(crate) enum PacketType {
+pub enum PacketType {
     #[default]
     None,
     /// It appears that this is only used from the Slave
