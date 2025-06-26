@@ -47,8 +47,6 @@ pub fn parse_ap_records(data: &[u8]) -> Result<Vec<WifiApRecord, MAX_AP_RECORDS>
 
         let (record_len, record_len_len) = decode_varint(&data[i..])?;
         i += record_len_len;
-        println!("Record data len: {:?}", record_len);
-        // println!("Examining record: {:?}", data[i..i + 30]);
 
         // todo: This won't work; you need to get the varint size of each field etc!
         let (record, _record_size) = WifiApRecord::from_bytes(&data[i..i + record_len as usize])?;
