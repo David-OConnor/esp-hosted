@@ -383,7 +383,7 @@ impl RpcReqWifiScanStart {
     pub fn to_bytes(&self, buf: &mut [u8]) -> usize {
         let mut i = 0;
 
-        let mut cfg_buf = [0; 30]; // Measured 22 with defaults.
+        let mut cfg_buf = [0; 30]; // Measured 22 with defaults, and 24 with u16s in some fields.
         let cfg_len = self.config.to_bytes(&mut cfg_buf);
 
         write_rpc(buf, 1, Len, cfg_len as u64, &mut i);

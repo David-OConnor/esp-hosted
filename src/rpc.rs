@@ -2,7 +2,7 @@
 //! is packaged into the Payload header and TLV structure. It contains a mix of protobuf-general
 //! concepts, and ones specific to the RPC used by esp-hosted-mcu.
 
-use defmt::{Format, Formatter};
+use defmt::{Format, Formatter, println};
 use heapless::Vec;
 use micropb::{MessageEncode, PbEncoder};
 use num_enum::TryFromPrimitive;
@@ -291,6 +291,12 @@ pub(crate) fn decode_tag(val: u16) -> (u16, WireType) {
 /// Returns number of bytes written (1–3 for a `u16`).
 pub(crate) fn encode_varint(mut v: u64, out: &mut [u8]) -> usize {
     let mut idx = 0;
+    if out.len() == 0 {
+        // Avoids a panic.
+        println!("Error: Empty buf when encoding a varint."); // todo temp
+        return 0;
+    }
+
     loop {
         let byte = (v & 0x7F) as u8;
         v >>= 7;

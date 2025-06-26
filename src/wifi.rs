@@ -215,7 +215,7 @@ impl ScanTime {
         let mut i = 0;
 
         // todo size?
-        let mut scan_time_buf = [0; 6];
+        let mut scan_time_buf = [0; 8]; // Measured at 5 with u16 values.
         let active_size = self.active.to_bytes(&mut scan_time_buf);
 
         write_rpc(buf, 1, Len, active_size as u64, &mut i);
@@ -228,7 +228,7 @@ impl ScanTime {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Default, Format)]
+#[derive(Clone, Copy, PartialEq, Default, TryFromPrimitive, Format)]
 #[repr(u8)]
 pub enum ScanType {
     #[default]
@@ -271,7 +271,7 @@ impl ScanConfig {
         write_rpc(buf, 5, Varint, self.scan_type as u64, &mut i);
 
         // todo size?
-        let mut scan_time_buf = [0; 8];
+        let mut scan_time_buf = [0; 14]; // Measured at 10 with all fields configured as u16.
         let scan_time_size = self.scan_time.to_bytes(&mut scan_time_buf);
 
         write_rpc(buf, 6, Len, scan_time_size as u64, &mut i);

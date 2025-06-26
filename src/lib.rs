@@ -33,7 +33,6 @@ mod esp_errors;
 pub mod proto;
 mod util;
 
-// pub use ble::{HciEvent, HciOpCode, HciPkt};
 pub use ble::*;
 use defmt::{Format, println};
 pub use header::{PayloadHeader, build_frame_ble};
