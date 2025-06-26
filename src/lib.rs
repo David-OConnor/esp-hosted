@@ -28,19 +28,19 @@ mod rpc;
 mod transport;
 pub mod wifi;
 
-mod ble;
+pub mod ble;
 mod esp_errors;
 pub mod proto;
 mod util;
 
-pub use ble::*;
+// pub use ble::*;
 use defmt::{Format, println};
+pub use esp_errors::EspCode;
 pub use header::{PayloadHeader, build_frame_ble};
 use micropb::{MessageDecode, PbDecoder};
 pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP};
 pub use proto_data::RpcId;
 
-// use crate::esp_errors::EspCode;
 pub use crate::rpc::*;
 use crate::{
     header::{HEADER_SIZE, InterfaceType, PL_HEADER_SIZE},
@@ -76,7 +76,7 @@ pub enum EspError {
     Proto,
     Capacity,
     // todo: Put back. flash limit problem.
-    // Esp(EspCode),
+    Esp(EspCode),
 }
 
 // #[cfg(feature = "hal")]
@@ -152,49 +152,18 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     let (rpc, data_start_i, _data_len_rpc) = Rpc::from_bytes(rpc_buf)?;
     let data = &rpc_buf[data_start_i..];
 
-    // todo: Temp to get troubleshooting data to the micropb GH.
-    // println!("RPC BUF: {:?}", rpc_buf);
-    // println!("\n\n\n\nParsing msg..."); // todo tmep
-
     // Parsing the proto data from the generated mod.
     let mut decoder = PbDecoder::new(rpc_buf);
     let mut rpc_parsed = RpcP::default();
 
-    // todo: Until we sort out decode errors on repeated fields with micropb.
     rpc_parsed
         .decode(&mut decoder, rpc_buf.len())
         .map_err(|_| EspError::Proto)?;
-
-    // // Workaround to fall back to our native API, setting MicroPB's parse result to None, vice returning an error.
-    // let mut rpc_proto_ = None;
-    // match rpc_proto.decode(&mut decoder, rpc_buf.len()) {
-    //     Ok(_) => rpc_proto_ = Some(rpc_proto),
-    //     Err(e) => {
-    //         match e {
-    //             micropb::DecodeError::ZeroField => println!("ZF"),
-    //             micropb::DecodeError::UnexpectedEof => println!("Ueof"),
-    //             micropb::DecodeError::Deprecation => println!("Dep"),
-    //             micropb::DecodeError::UnknownWireType => println!("UWT"),
-    //             micropb::DecodeError::VarIntLimit => println!("Varlint"),
-    //             micropb::DecodeError::CustomField => println!("CustomF"),
-    //             micropb::DecodeError::Utf8 => println!("Utf"),
-    //             micropb::DecodeError::Capacity => {
-    //                 // println!("RPC buf len: {} Msg size (micropb): {}", rpc_buf.len(), rpc_proto.compute_size());
-    //                 println!("MIcropb capacity error");
-    //             }
-    //             micropb::DecodeError::WrongLen => println!("WrongLen"),
-    //             micropb::DecodeError::Reader(e2) => println!("Reader"),
-    //             _ => println!("Other"),
-    //         }
-    //         println!("Micropb decode error on: {:?}", rpc.msg_type);
-    //     }
-    // }
 
     Ok(MsgParsed::Wifi(WifiMsg {
         header,
         rpc,
         data,
-        // rpc_raw: rpc_proto_,
         rpc_parsed,
     }))
 }

@@ -59,6 +59,7 @@ dependencies = [
  "defmt",
  "heapless",
  "micropb",
+ "num-traits",
  "num_enum",
 ]
 

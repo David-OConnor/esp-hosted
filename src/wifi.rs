@@ -30,12 +30,13 @@ pub fn parse_ap_records(data: &[u8]) -> Result<Vec<WifiApRecord, MAX_AP_RECORDS>
 
     let mut i = 1; // todo: Not robust!
     if data.len() == 0 {
+        println!("Empty data on parsing AP records.");
         return Err(EspError::InvalidData);
     }
 
     let (num_records, nr_len) = decode_varint(&data[i..])?;
     i += nr_len;
-    // println!("Num records found: {:?}", num_records);
+    println!("Num records found: {:?}", num_records);
 
     for _ in 0..num_records {
         i += 1; // todo: Skipping over the tag for the records struct.
@@ -46,7 +47,7 @@ pub fn parse_ap_records(data: &[u8]) -> Result<Vec<WifiApRecord, MAX_AP_RECORDS>
 
         let (record_len, record_len_len) = decode_varint(&data[i..])?;
         i += record_len_len;
-        // println!("Record data len: {:?}", record_len);
+        println!("Record data len: {:?}", record_len);
         // println!("Examining record: {:?}", data[i..i + 30]);
 
         // todo: This won't work; you need to get the varint size of each field etc!
@@ -178,7 +179,7 @@ impl InitConfig {
     }
 }
 
-#[derive(Default, Format)]
+#[derive(Clone, Default, Format)]
 /// Range of active scan times per channel.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv423wifi_active_scan_time_t)
 pub struct ActiveScanTime {
@@ -202,7 +203,7 @@ impl ActiveScanTime {
 
 /// Aggregate of active & passive scan time per channel.
 /// [docs][https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv416wifi_scan_time_t)
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct ScanTime {
     pub active: ActiveScanTime,
     /// Passive scan time per channel, units: millisecond, values above 1500 ms may
@@ -670,6 +671,15 @@ where
     write(&buf[..frame_len])?;
 
     Ok(())
+}
+
+/// Deinit WiFi Free all resource allocated in esp_wifi_init and stop WiFi task.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv415esp_wifi_deinitv))
+pub fn deinit<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    write_empty_msg(buf, write, uid, RpcId::ReqWifiDeinit)
 }
 
 /// Promiscuous frame type.

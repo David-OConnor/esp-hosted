@@ -10,6 +10,7 @@ use num_enum::TryFromPrimitive;
 pub use crate::proto_data::RpcId;
 use crate::{
     EspError, RpcP,
+    esp_errors::EspCode,
     header::build_frame_wifi,
     proto_data::EventHeartbeat,
     transport::{RPC_EP_NAME_EVT, RPC_EP_NAME_RSP},
@@ -116,7 +117,7 @@ impl Rpc {
             msg_type,
             msg_id,
             uid: uid as u32,
-            payload: None, // todo: Update this
+            payload: None, // todo: Update this?
         };
 
         let (_data_tag, data_tag_size) = decode_varint(&buf[i..])?;
@@ -124,6 +125,17 @@ impl Rpc {
 
         let (data_len, data_len_size) = decode_varint(&buf[i..])?;
         i += data_len_size;
+
+        // Check for an ESP error code.
+        if data_len == 3 && buf[i] == 8 {
+            let (err_code, _) = decode_varint(&buf[i + 1..])?;
+            match EspCode::try_from(err_code as u16) {
+                Ok(c) => {
+                    return Err(EspError::Esp(c));
+                }
+                Err(_) => (),
+            }
+        }
 
         Ok((result, i, data_len as usize))
     }

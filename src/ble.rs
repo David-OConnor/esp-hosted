@@ -3,6 +3,7 @@
 use defmt::{Format, Formatter, println};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
+use num_traits::Float;
 
 use crate::EspError;
 
@@ -89,6 +90,55 @@ impl<'a> Format for AdvReport<'a> {
 
         // Close the list and the struct.
         defmt::write!(f, "] }}");
+    }
+}
+
+#[derive(Clone, Copy, Format, TryFromPrimitive, Default)]
+#[repr(u8)]
+pub enum BleScanType {
+    Passive = 0,
+    #[default]
+    Active = 1,
+}
+
+#[derive(Clone, Copy, Format)]
+#[repr(u8)]
+pub enum BleOwnAddrType {
+    Public = 0,
+    Private = 1,
+}
+
+#[derive(Clone, Copy, Format)]
+#[repr(u8)]
+pub enum FilterPolicy {
+    AcceptAll = 0,
+    WhitelistOnly = 1,
+}
+
+pub struct BleScanParams {
+    pub scan_type: BleScanType,
+    pub interval: u16, // ms
+    /// Must be shorter than, or equal to the interval.
+    pub window: u16, // ms
+    pub own_address_type: BleOwnAddrType,
+    pub filter_policy: FilterPolicy,
+}
+
+impl BleScanParams {
+    pub fn to_bytes(&self) -> [u8; 7] {
+        let mut result = [0; 7];
+
+        // Convert to time units of 0.625ms.
+        let interval = ((self.interval as f32) / 0.625).round() as u16;
+        let window = ((self.window as f32) / 0.625).round() as u16;
+
+        result[0] = self.scan_type as u8;
+        result[1..3].copy_from_slice(&interval.to_le_bytes());
+        result[3..5].copy_from_slice(&window.to_le_bytes());
+        result[5] = self.own_address_type as u8;
+        result[6] = self.filter_policy as u8;
+
+        result
     }
 }
 

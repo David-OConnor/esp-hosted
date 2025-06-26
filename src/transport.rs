@@ -2,7 +2,7 @@
 
 use defmt::Format;
 
-use crate::{EspError, HciPkt};
+use crate::{EspError, ble::HciPkt};
 
 const PRIO_Q_SERIAL: u8 = 0;
 const PRIO_Q_BT: u8 = 1;
