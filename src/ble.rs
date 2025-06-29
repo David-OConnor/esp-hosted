@@ -3,7 +3,7 @@
 use defmt::{Format, Formatter, println};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
-use num_traits::Float;
+use num_traits::float::FloatCore;
 
 use crate::EspError;
 

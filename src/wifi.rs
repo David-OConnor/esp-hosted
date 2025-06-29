@@ -586,6 +586,19 @@ where
     write_empty_msg(buf, write, uid, RpcId::ReqWifiScanGetApRecord)
 }
 
+
+/// Clear AP list found in last scan.
+/// This API will free all memory occupied by scanned AP list.
+/// When the obtained AP list fails, AP records must be cleared,otherwise it may cause memory leakage.
+/// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv422esp_wifi_clear_ap_listv)
+pub fn clear_ap_list<W>(buf: &mut [u8], write: W, uid: u32) -> Result<(), EspError>
+where
+    W: FnMut(&[u8]) -> Result<(), EspError>,
+{
+    write_empty_msg(buf, write, uid, RpcId::ReqWifiClearApList)
+}
+
+
 /// Retrieve the list of APs found during the last scan. The returned AP list is sorted in descending order based on RSSI.
 /// [docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html#_CPPv428esp_wifi_scan_get_ap_recordsP8uint16_tP16wifi_ap_record_t)
 pub fn scan_get_ap_records<W>(
