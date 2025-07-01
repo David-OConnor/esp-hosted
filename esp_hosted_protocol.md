@@ -7,27 +7,31 @@ All byte encodings are little endian.
 
 ## Frame structure
 
-### Bytes 0-11: Payload header
+### Bytes 0-11: Payload header. (Used for both Wi-Fi and BLE)
 The first twelve bytes are a payload header common to all messages.
 
-- **0, bits 0:4**: Interface type: An `8-bit enum` with values like Serial, AP, and HCI.
-- **0, bits 4:8**: Interface number. 0 is a good default.
-- **1:** flags. 0 is a good default.
+- **0, bits 0:4**: Interface type: An `8-bit enum`.  **3**: Serial, for Wi-Fi config. **4**: HCI, for BLE.
+- **0, bits 4:8**: Interface number. **0** is a good default.
+- **1:** flags. **0** is a good default.
 - **2, 3:** Payload length: `u16`. The size, in bytes, of everything in the frame following this header.
 - **4, 5**: Offset: `u16`. **Always = [12, 0]** (This header's size). Indicates the byte index the payload starts.
 - **6, 7:** Checksum, calculated over the entire frame; see below. Initialize it to 0, then compute at the end.
 - **8, 9:** `u16`. Sequence number for tracking packets (Useful in debugging)
-- **10, bits 0:2:** Throttle command. 0 is a good default.
-- **11:** Packet type. Default = 0. For HCI and Private packet types, this takes the value  `0x33` and `0x22` respectively.
+- **10, bits 0:2:** Throttle command. **0** is a good default.
+- **11:** Packet type. Default = **0**. For HCI and Private packet types, this may take other values. (todo: QC this: HCI seems to work with this set to 0.)
 
+
+### If using BLE, stop here. 
+The rest of the command for BLE, after the first 12 bytes, are standard HCI. The below information
+describes the protocol for sending RPC commands, which are used for Wi-Fi.
 
 ### Bytes 12-23: TLV header
 The TLV (type, length, value) header further describes _endpoint_ and length data.
 
-- **12:** `u8`. Always `1` to indicate the following bytes specify the Endpoint name.
+- **12:** `u8`. Always **1** to indicate the following 2 bytes specify the Endpoint name.
 - **13, 14:** Length of the endpoint name below. `u16.` **Always [6, 0]**.
 - **15 - 20** Endpoint name. Hosts always writes."RPCRsp" as ASCII bytes. Slave may write that, or "RPCEvt".
-- **21:** `u8.` Always `2` to indicate the following bytes are data.
+- **21:** `u8.` Always **2** to indicate the following bytes are data.
 - **22, 23:** Payload len: `u16`. This is the length, in bytes, of all remaining data after this TLV header. (Bytes 24-)
 
 
@@ -35,10 +39,10 @@ The TLV (type, length, value) header further describes _endpoint_ and length dat
 The remaining data is specific to the request or response type, and is structured according to the RPC protocol.
 It uses variable-length integers (_varints_). The data is organized as follows, with no spacing between items. 
 
-See the [official Protocol Buffers encoding documentation](https://protobuf.dev/programming-guides/encoding/) for
-details on encoding structs.
+See the [official Protocol Buffers encoding documentation](https://protobuf.dev/programming-guides/encoding/) for details on encoding values. This serialization protocol, combined with data in the
+`.proto` file, defines the spec for configuring Wi-Fi.
 
-The `Tag` type is used several types. It's a varint-encoded enum of two values: (field <<3) | (wire_type as u8). 
+The `Tag` type is used several types; it is part of the protobuf spec. It's a varint-encoded enum of two values: (field <<3) | (wire_type as u8). 
 Field is a `u8`starting at 1. Wire type is an enum as follows:
 
 ```rust
@@ -57,11 +61,11 @@ pub enum WireType {
 
 Frame data continued, starting at byte 24 (All varints, except the payload).
 
-- **24**: Tag for field 1, wire type 0; always 8.
-- **25**: RPC message type: (e.g. 1 for Request, 2 for Response.)
-- **26**: Tag for field 2, wire type 0; always 16.
+- **24**: Tag for field 1, wire type 0; **always 8.**
+- **25**: RPC message type: (e.g. **1** for Request, **2** for Response.)
+- **26**: Tag for field 2, wire type 0; **always 16**.
 - **27, 28**: RPC ID, encoded as a varint. This defines the nature of the request.
-- **29**: Tag for field 3, wire type 0; always 24.
+- **29**: Tag for field 3, wire type 0; **always 24**.
 - **30-**: UID; a unique identifier of the requester's choice.
 - **next**: Tag with field = the message id, and wire type 2 (Length determined).
 - **next**: Data length (The RPC-id-specific payload that follows)
@@ -136,6 +140,8 @@ Note that all numerical values here are varint-encoded.
 - **0** Data len encoded as varint. (No payload data is required for this message's RPC ID)
 
 
-## On the message-specific payload
+## Message-specific payload
 Message-specific payloads are encoded in the same way as the RPC packet itself: Using a tag for each field with field
-number and wire type. This is a varint. Each field's contents is also a varint.
+number and wire type. This is a varint. Each field's contents is also a varint if numerical.
+See the protobuf spec on how to serialize sub-structs, and `bytes`. Note that String types,
+as defined by protobuf, are not used by ESP-Hosted-MCU; Strings are encoded as `bytes`.
