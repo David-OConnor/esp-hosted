@@ -67,7 +67,7 @@ Frame data continued, starting at byte 24 (All varints, except the payload).
 - **27, 28**: RPC ID, encoded as a varint. This defines the nature of the request.
 - **29**: Tag for field 3, wire type 0; **always 24**.
 - **30-**: UID; a unique identifier of the requester's choice.
-- **next**: Tag with field = the message id, and wire type 2 (Length determined).
+- **next**: Tag with field = the RPC ID (same as above), and wire type 2 (Length determined).
 - **next**: Data length (The RPC-id-specific payload that follows)
 - **next**: Data, as required.
 
@@ -129,7 +129,7 @@ Note that all numerical values here are varint-encoded.
 
 `[8, 1, 16, 183, 2, 24, 0, 186, 19, 0]`
 
-- **8:**: Tag for field 1, wire type 0; always this.
+- **8**: Tag for field 1, wire type 0; always this.
 - **1**: RPC message type: Request.
 - **16**: Tag for field 2, wire type 0; always this.
 - **183, 2**: RPC ID = 311, encoded as varint.

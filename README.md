@@ -8,11 +8,11 @@ written in rust.
 Compatible with ESP-Hosted-MCU 2.0.6 and ESP IDF 5.4.1 (And likely anything newer), and any host MCU and architecture. 
 For details on ESP-HOSTED-MCU's protocol see
 [this document](/esp_hosted_protocol.md). For a list of Wi-Fi commands and dat structures available, reference the
-[ESP32 IDF API docs](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html). For BLE commands, reference the [HCI docs](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html).
+[ESP32 IDF API Reference, Wi-Fi section](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/network/esp_wifi.html). For BLE commands, reference the [HCI docs](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host-controller-interface/host-controller-interface-functional-specification.html).
 
 This library includes two approaches: A high-level API using data structures from this library, and full access to 
 the native protobuf structures (Wi-Fi) and HCI interface (BLE). The native API is easier to work with, but only
-implements a small portion of functionality. The protobuf API is complete, but more cumbersome.
+implements a portion of functionality. The protobuf API is complete, but more cumbersome.
 
 This library does not use an allocator. This makes integrating it simple, but it uses a significant amount of flash
 for static buffers. These are configured in the `build_proto/src/main.rs` script on a field-by-field basis.
@@ -103,9 +103,9 @@ To perform specific actions, there are functions like `wifi::get_protocol`,  `wi
 take a `write` fn and `uid` as parameters, and others on a per-message basis. These are set up using structs that
 are part of this library.
 
-These only cover a small portion of available functionality. To get the full functionality, create a `RpcP` struct, then 
+To access the full functionality supported by ESP-Hosted, create a `RpcP` struct, then 
 pass it, and a write fn to the `write_rpc_proto`. Constructing these `RpcP` structs is done IOC the `micropb` lib. Here's
-an example, using the same heartbeat config as above. This is more verbose than our high-level API, but is much more flexible:
+an example, using the same heartbeat config as above. This is more verbose than our high-level API, but is more flexible:
 
 ```rust
     use esp_hosted::{RpcP, RpcTypeP, RpcIdP, Rpc_};
