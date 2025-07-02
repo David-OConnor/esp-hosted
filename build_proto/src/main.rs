@@ -16,7 +16,6 @@ const OTA_DATA_LEN: u32 = 500; // todo: A/R.
 const CSI_BUF_LEN: u32 = 30;
 
 
-
 fn main() {
     let mut gen_ = Generator::new();
     gen_.use_container_heapless();
@@ -83,13 +82,6 @@ fn main() {
     gen_.configure(".Rpc_Event_AP_StaDisconnected.mac", Config::new().max_bytes(BSSID_LEN));
     gen_.configure(".Rpc_Event_AP_StaConnected.mac", Config::new().max_bytes(BSSID_LEN));
 
-
-    // .configure(
-    //     ".",
-    //     Config::new()
-    //         // .no_clone_impl(true)
-    //         // .no_accessors(true),
-    // )
 
     gen_.compile_protos(&["esp_hosted_rpc.proto"], "../src/proto.rs")
         .unwrap();

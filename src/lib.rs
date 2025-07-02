@@ -153,6 +153,7 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     let data = &rpc_buf[data_start_i..];
 
     // Parsing the proto data from the generated mod.
+    // let mut decoder = PbDecoder::new(&rpc_buf[0..100]);
     let mut decoder = PbDecoder::new(rpc_buf);
     let mut rpc_parsed = RpcP::default();
 
