@@ -45,6 +45,7 @@ pub use crate::rpc::*;
 use crate::{
     header::{HEADER_SIZE, InterfaceType, PL_HEADER_SIZE},
     proto_data::RpcReqConfigHeartbeat,
+    transport::PacketType,
 };
 
 #[macro_export]
@@ -115,7 +116,9 @@ pub struct WifiMsg<'a> {
     pub rpc: Rpc,
     pub data: &'a [u8],
     // pub rpc_raw: Option<RpcP>,
-    pub rpc_parsed: RpcP,
+    /// This is a result, because sometimes it can fail, e.g. due to a capacity error,
+    /// where we're able to parse the rest of the data directly.
+    pub rpc_parsed: Result<RpcP, EspError>,
 }
 
 pub struct HciMsg<'a> {
@@ -130,10 +133,68 @@ pub enum MsgParsed<'a> {
 /// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
 /// the whole message received.
 pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
-    let header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE])?;
-    let total_size = header.len as usize + PL_HEADER_SIZE;
+    // Check for a shifted packet due to jitter. For example, from late reception start.
+    // This will cut of information that may be important for Wi-Fi RPC packets, but is skippable
+    // for HCI.
 
-    if total_size >= buf.len() {
+    if buf[0] > 8 || buf[0] == 0 {
+        // Handle a small amount of jitter (delayed reception) for BLE packets.
+        const MAX_SHIFT: usize = 4; // Index of offset len.
+
+        for offset in 1..MAX_SHIFT {
+            // println!("Checking for match: {:?}", buf[offset..offset + 10]);
+            if buf[offset..offset + 2] == [12, 0] && buf[offset + 6..offset + 9] == [0, 0, 4] {
+                // Align the shift with the [12, 0] we matched.
+                let shift = 4 - offset;
+                // println!("Shifted BLE packet. Shift: {}. Offset: {}", shift, offset);
+
+                // println!("Corrected buf: {:?}",&buf[PL_HEADER_SIZE - shift..30]); // todo tmep
+                return Ok(MsgParsed::Hci(HciMsg {
+                    data: &buf[PL_HEADER_SIZE - shift..],
+                }));
+            }
+        }
+
+        // Check for more aggressive shifts as well, without relying on the [12, 0] offset,
+        // and assuming HCI packet type = 62
+        for offset in 1..9 {
+            // println!("Checking for match T2: {:?}", buf[offset..offset + 9]);
+            // if buf[offset..offset + 4] == [0, 0, 4, 62] {
+            if buf[offset..offset + 3] == [0, 4, 62] {
+                // Align the shift with the [12, 0] we matched.
+                let shift = 9 - offset;
+                // println!(
+                //     "Shifted BLE packet Type 2. Shift: {}. Offset: {}",
+                //     shift, offset
+                // );
+
+                // println!("Corrected buf T2: {:?}",&buf[PL_HEADER_SIZE - shift..30]); // todo tmep
+                return Ok(MsgParsed::Hci(HciMsg {
+                    data: &buf[PL_HEADER_SIZE - shift..],
+                }));
+            }
+        }
+
+        // todo: Handle shifted Wi-Fi packets too?
+        // let mut modded_header_buf = [0; PL_HEADER_SIZE];
+        //
+        // modded_header_buf[shift..].copy_from_slice(&buf[shift..PL_HEADER_SIZE - shift]);
+        // println!("Modded header: {:?}", modded_header_buf);
+        //
+        // header = PayloadHeader::from_bytes(&mut modded_header_buf)?;
+        // header.if_type = InterfaceType::Hci;
+    }
+
+    let mut header = PayloadHeader::from_bytes(&buf[..HEADER_SIZE])?;
+    let mut total_size = header.len as usize + PL_HEADER_SIZE;
+
+    if total_size > buf.len() {
+        // todo: Print is temp.
+        println!(
+            "\nTotal size exceeds buf len for Wi-Fi. Total size: {}, buf len: {}",
+            total_size,
+            buf.len()
+        );
         return Err(EspError::Capacity);
     }
 
@@ -144,7 +205,12 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     }
 
     if HEADER_SIZE >= total_size {
-        println!("Error: Invalid RPC packet: {:?}", buf[0..24]);
+        // todo: Print is temp.
+        println!(
+            "Error: Invalid RPC packet. packet size: {}, buf: {:?}",
+            total_size,
+            buf[0..24]
+        );
         return Err(EspError::InvalidData);
     }
 
@@ -157,9 +223,13 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     let mut decoder = PbDecoder::new(rpc_buf);
     let mut rpc_parsed = RpcP::default();
 
-    rpc_parsed
-        .decode(&mut decoder, rpc_buf.len())
-        .map_err(|_| EspError::Proto)?;
+    let rpc_parsed = match rpc_parsed.decode(&mut decoder, rpc_buf.len()) {
+        Ok(r) => Ok(rpc_parsed),
+        Err(e) => Err(EspError::Proto),
+    };
+    // rpc_parsed
+    //     .decode(&mut decoder, rpc_buf.len())
+    //     .map_err(|_| EspError::Proto)?;
 
     Ok(MsgParsed::Wifi(WifiMsg {
         header,

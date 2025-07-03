@@ -94,6 +94,9 @@ impl Rpc {
     /// Returns (Self, data start i, data len expected).
     pub fn from_bytes(buf: &[u8]) -> Result<(Self, usize, usize), EspError> {
         // Skipping msg type tag at byte 0.
+        if buf.len() < 2 {
+            return Err(EspError::InvalidData);
+        }
         let msg_type = buf[1].try_into().map_err(|_| EspError::InvalidData)?;
 
         let (rpc_id, rpc_id_size) = decode_varint(&buf[3..])?;

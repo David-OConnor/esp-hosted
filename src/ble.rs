@@ -5,14 +5,18 @@ use heapless::Vec;
 use num_enum::TryFromPrimitive;
 use num_traits::float::FloatCore;
 
-use crate::EspError;
+use crate::{EspError, ble::HciEvent::CommandComplete};
 
 // todo: Experiment; set these A/R.
 const MAX_HCI_EVS: usize = 8;
 const MAX_NUM_ADV_DATA: usize = 8;
 const MAX_NUM_ADV_REPS: usize = 4;
 
-const HCI_TX_MAX_LEN: usize = 15; // todo: Raise A/R.
+// For Event Packets (0x04), Byte 0 is the Event Code (e.g. 0x3E for LE Meta‐Event).
+// For Command Packets (0x01), Bytes 0–1 together form the OpCode, and Byte 2 is the parameter length.
+const HCI_HDR_SIZE: usize = 3;
+
+const HCI_TX_MAX_LEN: usize = 30; // todo: Raise A/R.
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
@@ -151,14 +155,13 @@ pub fn make_hci_cmd(opcode: HciOpCode, params: &[u8]) -> ([u8; HCI_TX_MAX_LEN], 
     payload[2] = params.len() as u8;
     payload[3..3 + params.len()].copy_from_slice(params);
 
-    println!("Writing HCI payload: {:?}", payload[..3 + params.len()]);
+    // println!("Writing HCI payload: {:?}", payload[..3 + params.len()]);
 
-    (payload, 3 + params.len())
+    (payload, HCI_HDR_SIZE + params.len())
 }
 
 pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
-    use heapless::Vec;
-    let mut out = Vec::<AdvData, MAX_NUM_ADV_DATA>::new();
+    let mut result = Vec::<AdvData, MAX_NUM_ADV_DATA>::new();
 
     while !d.is_empty() {
         let len = d[0] as usize;
@@ -171,36 +174,36 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
 
         match ad_type {
             0x01 if val.len() == 1 => {
-                let _ = out.push(AdvData::Flags(val[0]));
+                let _ = result.push(AdvData::Flags(val[0]));
             }
             0x03 => {
-                let _ = out.push(AdvData::Complete16BitUuids(val));
+                let _ = result.push(AdvData::Complete16BitUuids(val));
             }
             0x05 => {
-                let _ = out.push(AdvData::Complete32BitUuids(val));
+                let _ = result.push(AdvData::Complete32BitUuids(val));
             }
             0x07 => {
-                let _ = out.push(AdvData::Complete128BitUuids(val));
+                let _ = result.push(AdvData::Complete128BitUuids(val));
             }
             0x08 => {
                 if let Ok(s) = core::str::from_utf8(val) {
-                    let _ = out.push(AdvData::ShortenedLocalName(s));
+                    let _ = result.push(AdvData::ShortenedLocalName(s));
                 }
             }
             0x09 => {
                 if let Ok(s) = core::str::from_utf8(val) {
-                    let _ = out.push(AdvData::CompleteLocalName(s));
+                    let _ = result.push(AdvData::CompleteLocalName(s));
                 }
             }
             0xFF if val.len() >= 2 => {
                 let company = u16::from_le_bytes([val[0], val[1]]);
-                let _ = out.push(AdvData::Manufacturer {
+                let _ = result.push(AdvData::Manufacturer {
                     company,
                     data: &val[2..],
                 });
             }
             _ => {
-                let _ = out.push(AdvData::Other {
+                let _ = result.push(AdvData::Other {
                     typ: ad_type,
                     data: val,
                 });
@@ -210,7 +213,7 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
         d = &d[1 + len..];
     }
 
-    out
+    result
 }
 
 // #[derive(Format)]
@@ -263,101 +266,138 @@ impl<'a> Format for HciEvent<'a> {
     }
 }
 
-pub fn parse_hci_events(mut buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspError> {
-    let mut out = Vec::<HciEvent, 8>::new();
+#[derive(Clone, Copy, PartialEq, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum HciEventType {
+    InquiryComplete = 0x01,
+    InquiryResult = 0x02,
+    ConnectionComplete = 0x03,
+    ConnectionRequest = 0x04,
+    CommandComplete = 0x0E,
+    LeAdvertising = 0x3E,
+    // todo: more A/R
+}
 
-    while buf.len() >= 3 {
-        // Each HCI event in ESP-Hosted must start with 0x04 (H:4 Event)
-        if buf[0] != 0x04 {
-            break;
+pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspError> {
+    let mut result = Vec::<HciEvent, 8>::new();
+
+    let mut i = 0;
+
+    while i + HCI_HDR_SIZE <= buf.len() {
+        // todo: if this crashes, do <
+        // Parse all packets present in this payload.
+        if buf[i] != HciPkt::Evt as u8 {
+            // println!("Non-event HCI packet: {:?}", buf[i..i + 10]);
+            return Ok(result);
         }
 
-        let evt = buf[1];
-        let plen = buf[2] as usize;
-        if buf.len() < 3 + plen {
-            break;
+        // Parse the HCI header.
+        let evt_type: HciEventType = match buf[i + 1].try_into() {
+            Ok(evt) => evt,
+            Err(e) => {
+                println!("Error parsing HCI event: {:?}", buf[i + 1]); // todo temp
+                return Err(EspError::InvalidData);
+            }
+        };
+
+        let packet_len = buf[i + 2] as usize;
+
+        if i + 3 + packet_len > buf.len() {
+            println!("Buf not long enough for HCI event");
+            return Err(EspError::InvalidData);
         }
 
-        let params = &buf[3..3 + plen];
+        let params = &buf[i + 3..i + 3 + packet_len];
 
-        match evt {
-            // ────────────────────────── Command Complete ───────────────────
-            0x0E if plen >= 4 => {
+        match evt_type {
+            HciEventType::CommandComplete => {
                 let n_cmd = params[0];
                 let opcode: HciOpCode = u16::from_le_bytes([params[1], params[2]])
                     .try_into()
                     .map_err(|_| EspError::InvalidData)?;
 
                 let status = params[3];
-                out.push(HciEvent::CommandComplete {
-                    n_cmd,
-                    opcode,
-                    status,
-                    rest: &params[4..],
-                })
-                .ok();
+                result
+                    .push(HciEvent::CommandComplete {
+                        n_cmd,
+                        opcode,
+                        status,
+                        rest: &params[4..],
+                    })
+                    .ok();
             }
 
-            // ─────────────────────── LE Advertising Report ──────────────────
-            0x3E if plen >= 2 && params[0] == 0x02 => {
-                // sub-event 0x02, params[1] = number of reports
-                let num = params[1] as usize;
-                let mut idx = 2;
-                let mut reports = Vec::<AdvReport, 4>::new();
+            //  LE Advertising Report
+            HciEventType::LeAdvertising => {
+                if params[0] == 0x02 {
+                    // sub-event 0x02, params[1] = number of reports
+                    let num = params[1] as usize;
+                    let mut idx = 2;
+                    let mut reports = Vec::<AdvReport, 4>::new();
 
-                for _ in 0..num {
-                    // minimum bytes per report: 1(evt) + 1(addr_t) + 6(addr)
-                    // + 1(data_len) + 0(data) + 1(rssi) = 10
-                    if idx + 10 > params.len() {
-                        break;
+                    for _ in 0..num {
+                        // minimum bytes per report: 1(evt) + 1(addr_t) + 6(addr)
+                        // + 1(data_len) + 0(data) + 1(rssi) = 10
+                        if idx + 10 > params.len() {
+                            break;
+                        }
+
+                        let evt_type = params[idx];
+                        idx += 1;
+                        let addr_type = params[idx];
+                        idx += 1;
+
+                        let mut addr = [0u8; 6];
+                        addr.copy_from_slice(&params[idx..idx + 6]);
+                        idx += 6;
+
+                        let data_len = params[idx] as usize;
+                        idx += 1;
+                        if idx + data_len + 1 > params.len() {
+                            break;
+                        }
+
+                        let data = &params[idx..idx + data_len];
+                        idx += data_len;
+
+                        let rssi = params[idx] as i8;
+                        idx += 1;
+
+                        reports
+                            .push(AdvReport {
+                                evt_type,
+                                addr_type,
+                                addr,
+                                data,
+                                rssi,
+                                data_parsed: parse_adv_data(data),
+                            })
+                            .ok();
                     }
 
-                    let evt_type = params[idx];
-                    idx += 1;
-                    let addr_type = params[idx];
-                    idx += 1;
-
-                    let mut addr = [0u8; 6];
-                    addr.copy_from_slice(&params[idx..idx + 6]);
-                    idx += 6;
-
-                    let data_len = params[idx] as usize;
-                    idx += 1;
-                    if idx + data_len + 1 > params.len() {
-                        break;
-                    }
-
-                    let data = &params[idx..idx + data_len];
-                    idx += data_len;
-
-                    let rssi = params[idx] as i8;
-                    idx += 1;
-
-                    reports
-                        .push(AdvReport {
-                            evt_type,
-                            addr_type,
-                            addr,
-                            data,
-                            rssi,
-                            data_parsed: parse_adv_data(data),
-                        })
-                        .ok();
+                    result.push(HciEvent::AdvertisingReport { reports }).ok();
                 }
-
-                out.push(HciEvent::AdvertisingReport { reports }).ok();
             }
 
-            // ───────────────────────────── default / unknown ────────────────
             _ => {
-                println!("\n\nUnknown packet: {:?}\n\n", buf);
-                out.push(HciEvent::Unknown { evt, params }).ok();
+                println!("\n\nUnknown HCI evt type: {:?}", evt_type);
+
+                if result
+                    .push(HciEvent::Unknown {
+                        evt: evt_type as u8,
+                        params,
+                    })
+                    .is_err()
+                {
+                    return Err(EspError::Capacity);
+                }
             }
         }
 
-        // advance to the next event in the buffer
-        buf = &buf[3 + plen..];
+        i += HCI_HDR_SIZE + packet_len;
     }
 
-    Ok(out)
+    println!("Num HCI packets in buf: {:?}", result.len()); // todo temp
+
+    Ok(result)
 }
