@@ -139,16 +139,15 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
 
     if buf[0] > 8 || buf[0] == 0 {
         // Handle a small amount of jitter (delayed reception) for BLE packets.
-        const MAX_SHIFT: usize = 4; // Index of offset len.
+        const MAX_SHIFT: usize = 6; // Index of offset len.
 
+        // Note: This approach starts by looking at byte 4, then moves the starting index left
+        // each index, effectively. It covers both forward, and reverse shifts by a few bytes.
         for offset in 1..MAX_SHIFT {
-            // println!("Checking for match: {:?}", buf[offset..offset + 10]);
             if buf[offset..offset + 2] == [12, 0] && buf[offset + 6..offset + 9] == [0, 0, 4] {
                 // Align the shift with the [12, 0] we matched.
                 let shift = 4 - offset;
-                // println!("Shifted BLE packet. Shift: {}. Offset: {}", shift, offset);
 
-                // println!("Corrected buf: {:?}",&buf[PL_HEADER_SIZE - shift..30]); // todo tmep
                 return Ok(MsgParsed::Hci(HciMsg {
                     data: &buf[PL_HEADER_SIZE - shift..],
                 }));
@@ -157,7 +156,7 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
 
         // Check for more aggressive shifts as well, without relying on the [12, 0] offset,
         // and assuming HCI packet type = 62
-        for offset in 1..9 {
+        for offset in 1..16 {
             // println!("Checking for match T2: {:?}", buf[offset..offset + 9]);
             // if buf[offset..offset + 4] == [0, 0, 4, 62] {
             if buf[offset..offset + 3] == [0, 4, 62] {

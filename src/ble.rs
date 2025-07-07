@@ -1,16 +1,18 @@
-//! Minimal HCI support for Bluetooth operations
+//! Minimal HCI support for Bluetooth operations.
+//!
+//! See [the BLE docs, Part E. Host Controller Interface Functional Specification](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/host-controller-interface/host-controller-interface-functional-specification.html)
 
 use defmt::{Format, Formatter, println};
 use heapless::Vec;
 use num_enum::TryFromPrimitive;
 use num_traits::float::FloatCore;
 
-use crate::{EspError, ble::HciEvent::CommandComplete};
+use crate::EspError;
 
 // todo: Experiment; set these A/R.
-const MAX_HCI_EVS: usize = 8;
-const MAX_NUM_ADV_DATA: usize = 8;
-const MAX_NUM_ADV_REPS: usize = 4;
+pub const MAX_HCI_EVS: usize = 2; // Measured typical: ~1
+const MAX_NUM_ADV_DATA: usize = 6; // Measured typical: ~3
+pub const MAX_NUM_ADV_REPS: usize = 4; // Measured typical: ~1
 
 // For Event Packets (0x04), Byte 0 is the Event Code (e.g. 0x3E for LE Meta‐Event).
 // For Command Packets (0x01), Bytes 0–1 together form the OpCode, and Byte 2 is the parameter length.
@@ -27,11 +29,46 @@ pub enum HciPkt {
     Evt = 0x04,
 }
 
+/// https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-b0b17bc4-7719-7867-d773-1cd21c76fcd5
+#[derive(Clone, Copy, PartialEq, Format, TryFromPrimitive)]
+#[repr(u8)]
+pub enum HciOgf {
+    NoOperation = 0x00,
+    LinkControl = 0x01,
+    LinkPolicy = 0x02,
+    ControllerAndBaseboard = 0x03,
+    InformationParams = 0x04,
+    StatusParams = 0x05,
+    TestingCmds = 0x06,
+    LeController = 0x08,
+    VendorSPecificCmds = 0x3f,
+}
+
+/// https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-61/out/en/host-controller-interface/host-controller-interface-functional-specification.html#UUID-b0b17bc4-7719-7867-d773-1cd21c76fcd5
 #[derive(Clone, Copy, PartialEq, Format, TryFromPrimitive)]
 #[repr(u16)]
-pub enum HciOpCode {
-    LE_SET_SCAN_PARAMS = 0x200B, // OGF 0x08, OCF 0x000B
-    LE_SET_SCAN_ENABLE = 0x200C, // OGF 0x08, OCF 0x000B
+pub enum HciOcf {
+    SetAdvertisingData = 0x0008,
+    SetScanResponseData = 0x0009,
+    SetAdvertisingEnable = 0x000a,
+    SetScanParams = 0x000b,
+    SetScanEnable = 0x000c,
+    CreateConnection = 0x000d,
+    CreateConnectionCancel = 0x000e,
+    ReadFilterAcceptListSize = 0x000f,
+    ClearFilterAcceptList = 0x0010,
+    AddDeviceToFilterAcceptList = 0x0011,
+    RemoveDeviceFromFilterAcceptList = 0x0012,
+    PeriodicAdvertisingCreateSync = 0x0044,
+    PeriodicAdvertisingCreateSyncCancel = 0x0045,
+    AddDeviceToPeriodicAdvertiserList = 0x0047,
+    RemoveDeviceFromPeriodicAdvertiserList = 0x00487,
+    PeriodicAdvertisingReceiveEnable = 0x0059,
+    PeriodicAdvertisingSyncTransfer = 0x005a,
+}
+
+pub fn make_hci_opcode(ogf: HciOgf, ocf: HciOcf) -> u16 {
+    ((ogf as u16) << 10) | ocf as u16
 }
 
 #[derive(Format)]
@@ -42,6 +79,7 @@ pub enum AdvData<'a> {
     Complete128BitUuids(&'a [u8]),
     ShortenedLocalName(&'a str),
     CompleteLocalName(&'a str),
+    ServiceData(&'a [u8]),
     Manufacturer { company: u16, data: &'a [u8] },
     Other { typ: u8, data: &'a [u8] },
 }
@@ -146,12 +184,13 @@ impl BleScanParams {
     }
 }
 
-/// Build helper to push (pkt_type, opcode, params) into an ESP-Hosted frame
-pub fn make_hci_cmd(opcode: HciOpCode, params: &[u8]) -> ([u8; HCI_TX_MAX_LEN], usize) {
+/// Build helper to push (pkt_type, opcode, params) into an ESP-Hosted frame.
+/// Construct the opcode from OGF and OCF, using `make_hci_opcode()`.
+pub fn make_hci_cmd(opcode: u16, params: &[u8]) -> ([u8; HCI_TX_MAX_LEN], usize) {
     let mut payload = [0; HCI_TX_MAX_LEN];
 
     // payload[0] = HciPkt::Cmd as u8;
-    payload[0..2].copy_from_slice(&(opcode as u16).to_le_bytes());
+    payload[0..2].copy_from_slice(&(opcode).to_le_bytes());
     payload[2] = params.len() as u8;
     payload[3..3 + params.len()].copy_from_slice(params);
 
@@ -195,6 +234,9 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
                     let _ = result.push(AdvData::CompleteLocalName(s));
                 }
             }
+            0x16 => {
+                let _ = result.push(AdvData::ServiceData(val));
+            }
             0xFF if val.len() >= 2 => {
                 let company = u16::from_le_bytes([val[0], val[1]]);
                 let _ = result.push(AdvData::Manufacturer {
@@ -213,6 +255,8 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
         d = &d[1 + len..];
     }
 
+    println!("Adv data len: {:?}", result.len()); // todo temp
+
     result
 }
 
@@ -220,7 +264,7 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
 pub enum HciEvent<'a> {
     CommandComplete {
         n_cmd: u8, // todo: Is this the cmd?
-        opcode: HciOpCode,
+        opcode: u16,
         status: u8,
         rest: &'a [u8],
     },
@@ -279,15 +323,18 @@ pub enum HciEventType {
 }
 
 pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspError> {
-    let mut result = Vec::<HciEvent, 8>::new();
+    let mut result = Vec::<HciEvent, MAX_HCI_EVS>::new();
 
     let mut i = 0;
 
     while i + HCI_HDR_SIZE <= buf.len() {
-        // todo: if this crashes, do <
         // Parse all packets present in this payload.
         if buf[i] != HciPkt::Evt as u8 {
-            // println!("Non-event HCI packet: {:?}", buf[i..i + 10]);
+            // todo: This is causing early aborts!
+            // println!("Non-event HCI packet: {:?}", buf[i..i + 30]);
+            // println!("HCI pkt count: {:?}. buf len: {:?} / {:?}", result.len(), i, buf.len()); // todo temp
+            println!("HCI pkt count: {:?}", result.len()); // todo temp
+
             return Ok(result);
         }
 
@@ -312,9 +359,7 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
         match evt_type {
             HciEventType::CommandComplete => {
                 let n_cmd = params[0];
-                let opcode: HciOpCode = u16::from_le_bytes([params[1], params[2]])
-                    .try_into()
-                    .map_err(|_| EspError::InvalidData)?;
+                let opcode = u16::from_le_bytes([params[1], params[2]]);
 
                 let status = params[3];
                 result
@@ -333,7 +378,7 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
                     // sub-event 0x02, params[1] = number of reports
                     let num = params[1] as usize;
                     let mut idx = 2;
-                    let mut reports = Vec::<AdvReport, 4>::new();
+                    let mut reports = Vec::<AdvReport, MAX_NUM_ADV_REPS>::new();
 
                     for _ in 0..num {
                         // minimum bytes per report: 1(evt) + 1(addr_t) + 6(addr)
@@ -375,6 +420,8 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
                             .ok();
                     }
 
+                    println!("Reps len: {:?}", reports.len()); // todo temp
+
                     result.push(HciEvent::AdvertisingReport { reports }).ok();
                 }
             }
@@ -397,7 +444,7 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
         i += HCI_HDR_SIZE + packet_len;
     }
 
-    println!("Num HCI packets in buf: {:?}", result.len()); // todo temp
+    println!("HCI pkt count: {:?}", result.len()); // todo temp
 
     Ok(result)
 }

@@ -36,7 +36,6 @@ pub fn parse_ap_records(data: &[u8]) -> Result<Vec<WifiApRecord, MAX_AP_RECORDS>
 
     let (num_records, nr_len) = decode_varint(&data[i..])?;
     i += nr_len;
-    println!("Num records found: {:?}", num_records);
 
     for _ in 0..num_records {
         i += 1; // todo: Skipping over the tag for the records struct.
