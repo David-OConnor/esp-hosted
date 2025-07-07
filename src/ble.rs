@@ -9,10 +9,10 @@ use num_traits::float::FloatCore;
 
 use crate::EspError;
 
-// todo: Experiment; set these A/R.
+// todo: Experiment; set these A/R. Are these configured
 pub const MAX_HCI_EVS: usize = 2; // Measured typical: ~1
-const MAX_NUM_ADV_DATA: usize = 6; // Measured typical: ~3
-pub const MAX_NUM_ADV_REPS: usize = 4; // Measured typical: ~1
+const MAX_NUM_ADV_DATA: usize = 5; // Measured typical: ~3
+pub const MAX_NUM_ADV_REPS: usize = 3; // Measured typical: ~1
 
 // For Event Packets (0x04), Byte 0 is the Event Code (e.g. 0x3E for LE Meta‐Event).
 // For Command Packets (0x01), Bytes 0–1 together form the OpCode, and Byte 2 is the parameter length.
@@ -72,14 +72,20 @@ pub fn make_hci_opcode(ogf: HciOgf, ocf: HciOcf) -> u16 {
 }
 
 #[derive(Format)]
+/// See [Bluetooth Assigned Numbers, section 2.3: Common Data Types](https://www.bluetooth.com/specifications/assigned-numbers/)
 pub enum AdvData<'a> {
     Flags(u8),
+    Incomplete16BitUuids(&'a [u8]),
     Complete16BitUuids(&'a [u8]), // len = 2 × n
+    Incomplete32BitUuids(&'a [u8]),
     Complete32BitUuids(&'a [u8]),
+    Incomplete128BitUuids(&'a [u8]),
     Complete128BitUuids(&'a [u8]),
     ShortenedLocalName(&'a str),
     CompleteLocalName(&'a str),
-    ServiceData(&'a [u8]),
+    ClassOfDevice(&'a [u8]), // todo: type
+    DeviceId(&'a [u8]),      // todo: Type
+    ServiceData16Bit(&'a [u8]),
     Manufacturer { company: u16, data: &'a [u8] },
     Other { typ: u8, data: &'a [u8] },
 }
@@ -211,15 +217,25 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
         let ad_type = d[1];
         let val = &d[2..1 + len];
 
+        // https://www.bluetooth.com/specifications/assigned-numbers/
         match ad_type {
             0x01 if val.len() == 1 => {
                 let _ = result.push(AdvData::Flags(val[0]));
             }
+            0x02 if val.len() == 1 => {
+                let _ = result.push(AdvData::Incomplete16BitUuids(val));
+            }
             0x03 => {
                 let _ = result.push(AdvData::Complete16BitUuids(val));
             }
+            0x04 => {
+                let _ = result.push(AdvData::Incomplete32BitUuids(val));
+            }
             0x05 => {
                 let _ = result.push(AdvData::Complete32BitUuids(val));
+            }
+            0x06 => {
+                let _ = result.push(AdvData::Incomplete128BitUuids(val));
             }
             0x07 => {
                 let _ = result.push(AdvData::Complete128BitUuids(val));
@@ -235,7 +251,13 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
                 }
             }
             0x16 => {
-                let _ = result.push(AdvData::ServiceData(val));
+                let _ = result.push(AdvData::ServiceData16Bit(val));
+            }
+            0x0d => {
+                let _ = result.push(AdvData::ClassOfDevice(val));
+            }
+            0x10 => {
+                let _ = result.push(AdvData::DeviceId(val));
             }
             0xFF if val.len() >= 2 => {
                 let company = u16::from_le_bytes([val[0], val[1]]);
@@ -255,7 +277,7 @@ pub fn parse_adv_data(mut d: &[u8]) -> Vec<AdvData<'_>, MAX_NUM_ADV_DATA> {
         d = &d[1 + len..];
     }
 
-    println!("Adv data len: {:?}", result.len()); // todo temp
+    // println!("Adv data len: {:?}", result.len()); // todo temp
 
     result
 }
@@ -333,7 +355,7 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
             // todo: This is causing early aborts!
             // println!("Non-event HCI packet: {:?}", buf[i..i + 30]);
             // println!("HCI pkt count: {:?}. buf len: {:?} / {:?}", result.len(), i, buf.len()); // todo temp
-            println!("HCI pkt count: {:?}", result.len()); // todo temp
+            // println!("HCI pkt count: {:?}", result.len()); // todo temp
 
             return Ok(result);
         }
@@ -420,7 +442,7 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
                             .ok();
                     }
 
-                    println!("Reps len: {:?}", reports.len()); // todo temp
+                    // println!("Reps len: {:?}", reports.len()); // todo temp
 
                     result.push(HciEvent::AdvertisingReport { reports }).ok();
                 }
@@ -444,7 +466,7 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
         i += HCI_HDR_SIZE + packet_len;
     }
 
-    println!("HCI pkt count: {:?}", result.len()); // todo temp
+    // todo: Should return a capacity error here probably.
 
     Ok(result)
 }

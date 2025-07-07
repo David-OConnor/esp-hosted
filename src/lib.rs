@@ -190,7 +190,7 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     if total_size > buf.len() {
         // todo: Print is temp.
         println!(
-            "\nTotal size exceeds buf len for Wi-Fi. Total size: {}, buf len: {}",
+            "\nMsg size exceeds buf len. Size: {}, buf len: {}",
             total_size,
             buf.len()
         );
