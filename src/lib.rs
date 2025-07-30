@@ -188,12 +188,6 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     let mut total_size = header.len as usize + PL_HEADER_SIZE;
 
     if total_size > buf.len() {
-        // todo: Print is temp.
-        println!(
-            "\nMsg size exceeds buf len. Size: {}, buf len: {}",
-            total_size,
-            buf.len()
-        );
         return Err(EspError::Capacity);
     }
 
