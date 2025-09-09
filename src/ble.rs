@@ -18,7 +18,7 @@ pub const MAX_NUM_ADV_REPS: usize = 3; // Measured typical: ~1
 // For Command Packets (0x01), Bytes 0–1 together form the OpCode, and Byte 2 is the parameter length.
 const HCI_HDR_SIZE: usize = 3;
 
-const HCI_TX_MAX_LEN: usize = 30; // todo: Raise A/R.
+const HCI_TX_MAX_LEN: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, TryFromPrimitive, Format)]
 #[repr(u8)]
@@ -48,6 +48,7 @@ pub enum HciOgf {
 #[derive(Clone, Copy, PartialEq, Format, TryFromPrimitive)]
 #[repr(u16)]
 pub enum HciOcf {
+    SetAdvertisingParams = 0x0006,
     SetAdvertisingData = 0x0008,
     SetScanResponseData = 0x0009,
     SetAdvertisingEnable = 0x000a,
@@ -62,7 +63,7 @@ pub enum HciOcf {
     PeriodicAdvertisingCreateSync = 0x0044,
     PeriodicAdvertisingCreateSyncCancel = 0x0045,
     AddDeviceToPeriodicAdvertiserList = 0x0047,
-    RemoveDeviceFromPeriodicAdvertiserList = 0x00487,
+    RemoveDeviceFromPeriodicAdvertiserList = 0x0048,
     PeriodicAdvertisingReceiveEnable = 0x0059,
     PeriodicAdvertisingSyncTransfer = 0x005a,
 }
@@ -469,4 +470,79 @@ pub fn parse_hci_events(buf: &[u8]) -> Result<Vec<HciEvent, MAX_HCI_EVS>, EspErr
     // todo: Should return a capacity error here probably.
 
     Ok(result)
+}
+
+/// integer conversion: ms -> 0.625ms units with rounding
+#[inline]
+fn ms_to_0p625_units(ms: u16) -> u16 {
+    // units = round(ms / 0.625) = round(ms * 1600 / 1000)
+    let v = (ms as u32) * 1600 + 500; // +500 for rounding
+    (v / 1_000) as u16
+}
+
+/// 15-byte payload for LE Set Advertising Parameters (Core v5.x spec)
+pub fn le_set_adv_params_bytes(interval_ms: u16, adv_type: u8) -> [u8; 15] {
+    let units = ms_to_0p625_units(interval_ms);
+    let mut p = [0u8; 15];
+
+    // Advertising_Interval_Min / Max
+    p[0..2].copy_from_slice(&units.to_le_bytes());
+    p[2..4].copy_from_slice(&units.to_le_bytes());
+
+    // Advertising_Type (0x00 = ADV_IND, 0x03 = ADV_NONCONN_IND)
+    p[4] = adv_type;
+
+    // Own_Address_Type (0x00 = public)
+    p[5] = 0x00;
+
+    // Peer_Address_Type (ignored for *_UND* types)
+    p[6] = 0x00;
+
+    // Peer_Address (ignored for *_UND* types)
+    // already zeros at p[7..13]
+
+    // Advertising_Channel_Map (all three channels)
+    p[13] = 0x07;
+
+    // Advertising_Filter_Policy (process scan & connect req from any)
+    p[14] = 0x00;
+
+    p
+}
+
+// 32-byte payload for LE Set Advertising Data: [len_used, data[31]]
+pub fn le_set_adv_data_manu(company_id: u16, manu_data: &[u8]) -> Result<[u8; 32], EspError> {
+    // AD structure: [ad_len, 0xFF, company_le(2), manu_payload...]
+    // Total bytes consumed inside the 31-byte field:
+    //   used = 1 /*ad_len*/ + (1 /*type*/ + 2 /*company*/ + manu.len())
+    let used = 1 + 1 + 2 + manu_data.len();
+    if used > 31 {
+        return Err(EspError::Capacity);
+    }
+
+    let mut params = [0u8; 32];
+    params[0] = used as u8; // Advertising_Data_Length
+
+    let ad_len = (1 + 2 + manu_data.len()) as u8;
+    params[1] = ad_len; // AD length
+    params[2] = 0xFF; // AD type = Manufacturer Specific Data
+    params[3..5].copy_from_slice(&company_id.to_le_bytes());
+    params[5..5 + manu_data.len()].copy_from_slice(manu_data);
+    // remaining bytes already zero-padded
+
+    Ok(params)
+}
+
+pub fn le_set_scan_rsp_name(name: &str) -> Result<[u8; 32], EspError> {
+    let b = name.as_bytes();
+    let use_len = core::cmp::min(b.len(), 29); // 31 total: 1(len) + 1(type) + N
+    let typ = if b.len() <= 29 { 0x09 } else { 0x08 }; // Complete or Shortened
+
+    let mut p = [0u8; 32];
+    p[0] = (1 + 1 + use_len) as u8; // Scan_Response_Data_Length
+    p[1] = (1 + use_len) as u8; // AD length
+    p[2] = typ; // AD type: 0x09=Complete Name, 0x08=Shortened
+    p[3..3 + use_len].copy_from_slice(&b[..use_len]);
+
+    Ok(p)
 }

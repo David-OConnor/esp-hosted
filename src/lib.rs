@@ -22,7 +22,7 @@
 //! It's transport agnostic; compatible with SPI, SDIO, and UART. It does this by allowing the application firmware to pass
 //! a generic `write` function, and reads are performed as functions that act on buffers passed by the firmware.
 
-mod header;
+pub mod header;
 pub mod proto_data;
 mod rpc;
 mod transport;
@@ -40,12 +40,12 @@ pub use header::{PayloadHeader, build_frame_ble};
 use micropb::{MessageDecode, PbDecoder};
 pub use proto::{Rpc as RpcP, RpcId as RpcIdP, RpcType as RpcTypeP};
 pub use proto_data::RpcId;
+pub use transport::PacketType;
 
 pub use crate::rpc::*;
 use crate::{
     header::{HEADER_SIZE, InterfaceType, PL_HEADER_SIZE},
     proto_data::RpcReqConfigHeartbeat,
-    transport::PacketType,
 };
 
 #[macro_export]
@@ -130,9 +130,10 @@ pub enum MsgParsed<'a> {
     Hci(HciMsg<'a>),
 }
 
+/// Use this for UART.
 /// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
 /// the whole message received.
-pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
+pub fn parse_msg_uart(buf: &[u8], no_header: bool) -> Result<MsgParsed, EspError> {
     // Check for a shifted packet due to jitter. For example, from late reception start.
     // This will cut of information that may be important for Wi-Fi RPC packets, but is skippable
     // for HCI.
@@ -159,6 +160,10 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
         for offset in 1..16 {
             // println!("Checking for match T2: {:?}", buf[offset..offset + 9]);
             // if buf[offset..offset + 4] == [0, 0, 4, 62] {
+            if offset + 3 >= buf.len() {
+                return Err(EspError::InvalidData);
+            }
+
             if buf[offset..offset + 3] == [0, 4, 62] {
                 // Align the shift with the [12, 0] we matched.
                 let shift = 9 - offset;
@@ -210,6 +215,45 @@ pub fn parse_msg(buf: &[u8]) -> Result<MsgParsed, EspError> {
     let rpc_buf = &buf[HEADER_SIZE..total_size];
     let (rpc, data_start_i, _data_len_rpc) = Rpc::from_bytes(rpc_buf)?;
     let data = &rpc_buf[data_start_i..];
+
+    // Parsing the proto data from the generated mod.
+    // let mut decoder = PbDecoder::new(&rpc_buf[0..100]);
+    let mut decoder = PbDecoder::new(rpc_buf);
+    let mut rpc_parsed = RpcP::default();
+
+    let rpc_parsed = match rpc_parsed.decode(&mut decoder, rpc_buf.len()) {
+        Ok(r) => Ok(rpc_parsed),
+        Err(e) => Err(EspError::Proto),
+    };
+    // rpc_parsed
+    //     .decode(&mut decoder, rpc_buf.len())
+    //     .map_err(|_| EspError::Proto)?;
+
+    Ok(MsgParsed::Wifi(WifiMsg {
+        header,
+        rpc,
+        data,
+        rpc_parsed,
+    }))
+}
+
+/// Use this for SPI, after parsing the header in the first 12-byte transaction.
+pub fn parse_msg(buf: &[u8], header: PayloadHeader) -> Result<MsgParsed, EspError> {
+    let mut total_size = header.len as usize;
+
+    if total_size > buf.len() {
+        return Err(EspError::Capacity);
+    }
+
+    if header.if_type == InterfaceType::Hci {
+        return Ok(MsgParsed::Hci(HciMsg { data: &buf[..] }));
+    }
+
+    let rpc_buf = &buf[..total_size];
+    let (rpc, data_start_i, _data_len_rpc) = Rpc::from_bytes(rpc_buf)?;
+    let data = &rpc_buf[data_start_i..];
+
+    println!("RPC read: {:?}", rpc); // todo temp
 
     // Parsing the proto data from the generated mod.
     // let mut decoder = PbDecoder::new(&rpc_buf[0..100]);
