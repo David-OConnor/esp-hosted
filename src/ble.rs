@@ -48,6 +48,8 @@ pub enum HciOgf {
 #[derive(Clone, Copy, PartialEq, Format, TryFromPrimitive)]
 #[repr(u16)]
 pub enum HciOcf {
+    LeSetEventMask = 0x0001,
+    LeSetRandomAddress = 0x0005,
     SetAdvertisingParams = 0x0006,
     SetAdvertisingData = 0x0008,
     SetScanResponseData = 0x0009,
@@ -481,7 +483,7 @@ fn ms_to_0p625_units(ms: u16) -> u16 {
 }
 
 /// 15-byte payload for LE Set Advertising Parameters (Core v5.x spec)
-pub fn le_set_adv_params_bytes(interval_ms: u16, adv_type: u8) -> [u8; 15] {
+pub fn le_set_adv_params_bytes(interval_ms: u16, adv_type: u8, own_addr_type: u8) -> [u8; 15] {
     let units = ms_to_0p625_units(interval_ms);
     let mut p = [0u8; 15];
 
@@ -496,7 +498,8 @@ pub fn le_set_adv_params_bytes(interval_ms: u16, adv_type: u8) -> [u8; 15] {
     p[5] = 0x00;
 
     // Peer_Address_Type (ignored for *_UND* types)
-    p[6] = 0x00;
+    // 0: public. 1: random
+    p[6] = own_addr_type;
 
     // Peer_Address (ignored for *_UND* types)
     // already zeros at p[7..13]
@@ -533,16 +536,15 @@ pub fn le_set_adv_data_manu(company_id: u16, manu_data: &[u8]) -> Result<[u8; 32
     Ok(params)
 }
 
-pub fn le_set_scan_rsp_name(name: &str) -> Result<[u8; 32], EspError> {
-    let b = name.as_bytes();
-    let use_len = core::cmp::min(b.len(), 29); // 31 total: 1(len) + 1(type) + N
-    let typ = if b.len() <= 29 { 0x09 } else { 0x08 }; // Complete or Shortened
+pub fn le_set_scan_rsp_name(name: &[u8]) -> Result<[u8; 32], EspError> {
+    let use_len = core::cmp::min(name.len(), 29); // 31 total: 1(len) + 1(type) + N
+    let typ = if name.len() <= 29 { 0x09 } else { 0x08 }; // Complete or Shortened
 
     let mut p = [0u8; 32];
     p[0] = (1 + 1 + use_len) as u8; // Scan_Response_Data_Length
     p[1] = (1 + use_len) as u8; // AD length
     p[2] = typ; // AD type: 0x09=Complete Name, 0x08=Shortened
-    p[3..3 + use_len].copy_from_slice(&b[..use_len]);
+    p[3..3 + use_len].copy_from_slice(&name[..use_len]);
 
     Ok(p)
 }

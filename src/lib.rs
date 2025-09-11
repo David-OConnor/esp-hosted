@@ -130,10 +130,9 @@ pub enum MsgParsed<'a> {
     Hci(HciMsg<'a>),
 }
 
-/// Use this for UART.
-/// Parse the payload header, and separate the RPC bytes from the whole message. Accepts
+/// Parse the payload with header, and separate the RPC bytes from the whole message. Accepts
 /// the whole message received.
-pub fn parse_msg_uart(buf: &[u8], no_header: bool) -> Result<MsgParsed, EspError> {
+pub fn parse_msg_header_not_read(buf: &[u8]) -> Result<MsgParsed, EspError> {
     // Check for a shifted packet due to jitter. For example, from late reception start.
     // This will cut of information that may be important for Wi-Fi RPC packets, but is skippable
     // for HCI.
@@ -238,7 +237,8 @@ pub fn parse_msg_uart(buf: &[u8], no_header: bool) -> Result<MsgParsed, EspError
 }
 
 /// Use this for SPI, after parsing the header in the first 12-byte transaction.
-pub fn parse_msg(buf: &[u8], header: PayloadHeader) -> Result<MsgParsed, EspError> {
+/// Assumes the header has been read already, and passed as a param.
+pub fn parse_msg_header_read(buf: &[u8], header: PayloadHeader) -> Result<MsgParsed, EspError> {
     let mut total_size = header.len as usize;
 
     if total_size > buf.len() {
